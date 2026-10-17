@@ -2,16 +2,16 @@
 
 ## Decision
 
-EquityLens now uses a Next.js frontend and a stateless FastAPI backend deployed as two Vercel projects from one repository.
+EquityLens now uses a Next.js frontend and a stateless FastAPI backend deployed together as one Vercel Services project.
 
 Vercel documentation reviewed during migration:
 
 - FastAPI framework preset and custom `tool.vercel.entrypoint`
 - Python runtime entry-point requirements
 - `/api` file-function compatibility and framework-preset precedence
-- Vercel Services guidance for combined Next.js/Python projects
+- Vercel Services configuration, routing, and private service bindings
 
-Services availability could not be verified without an authenticated Vercel account. The migration therefore does not assume Services access. Separate projects are operationally explicit and use the supported Next.js and FastAPI presets independently.
+Services are available on all Vercel plans. The repository follows Vercel's documented Next.js plus FastAPI topology: separate service roots, one public frontend rewrite, and a generated private backend binding.
 
 ## Removed
 
@@ -48,7 +48,7 @@ Services availability could not be verified without an authenticated Vercel acco
 | AI execution | Local Ollama or manual | Manual default; optional configured external endpoint |
 | Reports | Streamlit download buttons | FastAPI streaming download responses |
 | Cloud persistence | Ephemeral SQLite risk | Stateless demo plus explicit storage protocol |
-| Frontend/backend connection | Same Python process | Same-origin Next.js proxy to configured FastAPI URL |
+| Frontend/backend connection | Same Python process | Same-origin Next.js proxy over a Vercel service binding |
 
 ## Serverless Boundaries
 
@@ -57,20 +57,22 @@ Services availability could not be verified without an authenticated Vercel acco
 - Processing is synchronous only for bounded demo-sized documents.
 - Files and extracted text are not written to the Vercel filesystem.
 - Large-document production support requires asynchronous jobs and durable object storage.
-- `backend/storage.py` is the provider boundary; no storage provider is silently selected.
+- `backend/app/storage.py` is the provider boundary; no storage provider is silently selected.
 
 ## Deployment Topology
 
 ```text
-Vercel Project: equitylens-frontend
-  Root: frontend/
-  Next.js route handler: /api/backend/[...path]
-  BACKEND_URL -> backend deployment
+Vercel Project: lukaloverfinal (Services preset, repository root)
+  Public frontend service
+    Root: frontend/
+    Next.js route handler: /api/backend/[...path]
+    Generated BACKEND_URL binding -> backend service
 
-Vercel Project: equitylens-backend
-  Root: ./
-  FastAPI entrypoint: backend.api:app
-  Optional ALLOWED_ORIGINS / INFERENCE_* variables
+  Private backend service
+    Root: backend/
+    FastAPI entrypoint: app.main:app
+    Deterministic engine: backend/equitylens/
+    Optional INFERENCE_* variables
 ```
 
-This topology resolves the original error because Vercel imports an actual top-level FastAPI `app`, while the Streamlit `app.py` no longer exists.
+The top-level catch-all routes public traffic to Next.js. FastAPI has no public rewrite; the allowlisted Next.js route handler reaches it through the deployment-aware binding. This resolves the original error because Vercel no longer treats the repository root as a standalone Python application.

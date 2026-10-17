@@ -11,15 +11,15 @@ import {
 import { useWorkspace } from "@/lib/workspace";
 
 export const navigation = [
-  { href: "/", label: "Dashboard", icon: Gauge },
+  { href: "/dashboard", label: "Dashboard", icon: Gauge },
   { href: "/workspace", label: "Company Workspace", icon: Building2 },
   { href: "/financials", label: "Financial Analysis", icon: ChartNoAxesCombined },
   { href: "/valuation", label: "Valuation Lab", icon: Calculator },
-  { href: "/agents", label: "AI Research Agents", icon: Bot },
+  { href: "/research", label: "AI Research Agents", icon: Bot },
   { href: "/thesis", label: "Investment Thesis", icon: ShieldCheck },
   { href: "/chat", label: "Research Chat", icon: MessageSquareText },
   { href: "/report", label: "Investment Report", icon: FileOutput },
-  { href: "/prompt-lab", label: "Prompt Engineering Lab", icon: Sparkles },
+  { href: "/prompts", label: "Prompt Engineering Lab", icon: Sparkles },
   { href: "/settings", label: "Settings", icon: Settings }
 ] as const;
 
@@ -42,7 +42,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       {!collapsed && <div className="p-3"><label className="flex items-center gap-2 border border-line bg-ink px-3 py-2"><Search size={14} className="text-mist" /><input aria-label="Search navigation" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search modules" className="w-full bg-transparent text-xs outline-none placeholder:text-mist" /></label></div>}
       <nav className="flex-1 space-y-1 overflow-y-auto p-2" aria-label="Primary navigation">
         {filtered.map((item) => {
-          const active = path === item.href;
+          const active = path === item.href || (path === "/" && item.href === "/dashboard");
           const Icon = item.icon;
           return <Link key={item.href} href={item.href} onClick={() => setMobileOpen(false)} title={collapsed ? item.label : undefined} className={clsx("flex items-center gap-3 border-l-2 px-3 py-2.5 text-sm transition", active ? "border-gold bg-gold/10 text-white" : "border-transparent text-mist hover:bg-white/[0.03] hover:text-white")}><Icon size={17} />{!collapsed && <span>{item.label}</span>}</Link>;
         })}

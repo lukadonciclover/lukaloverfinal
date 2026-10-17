@@ -24,7 +24,7 @@ export function DashboardPage() {
     <>
       <PageHeader kicker="Research control room" title="Decision-grade analysis, with receipts." description="Trace every figure from source to model, pressure-test the valuation, and challenge the thesis before capital is committed." />
       <Notice kind={backend === "online" ? "success" : backend === "offline" ? "error" : "info"}>
-        Python engine: <strong>{backend}</strong>{backend === "offline" && ". Start the FastAPI backend or verify BACKEND_URL; workspace editing remains available in this browser."}
+        Python engine: <strong>{backend}</strong>{backend === "offline" && ". Start both services or verify the backend binding; workspace editing remains available in this browser."}
       </Notice>
       <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <Stat label="Latest revenue" value={formatMoney(typeof latest.revenue === "number" ? latest.revenue : null, workspace.company.currency)} detail={`${workspace.company.latest_financial_year} · source units`} />

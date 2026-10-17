@@ -14,14 +14,12 @@ Browser
   -> existing deterministic EquityLens Python modules
 ```
 
-The repository is configured for **two Vercel projects from one Git repository**:
+The repository is configured as **one Vercel Services project** with two independently built service roots:
 
-- Backend project root: repository root (`.`)
-- Frontend project root: `frontend/`
+- Public `frontend/` service: Next.js
+- Private `backend/` service: FastAPI and the deterministic Python engine
 
-Vercel's current documentation recommends Vercel Services for a combined new Next.js and Python project. Services access could not be verified in this development environment because no authenticated Vercel CLI was available. Separate projects are the documented supported alternative and do not require Services access.
-
-The browser calls only the Next.js origin. `frontend/app/api/backend/[...path]/route.ts` forwards allowlisted requests to the FastAPI deployment configured in server-only `BACKEND_URL`.
+The browser calls only the Next.js origin. `frontend/app/api/backend/[...path]/route.ts` forwards allowlisted requests over a private service binding. Vercel generates the server-only `BACKEND_URL` for every local, preview, and production deployment.
 
 ## Features
 
@@ -47,45 +45,36 @@ The migration keeps these framework-independent modules as the calculation sourc
 
 | Module | Status |
 |---|---|
-| `equitylens/financials.py` | Reused unchanged for growth, ratios, and quality checks |
-| `equitylens/valuation.py` | Reused unchanged for DCF, scenarios, sensitivity, and comparables |
-| `equitylens/documents.py` | Reused for extraction, chunking, suggestions, and BM25 retrieval |
-| `equitylens/prompts.py` | Reused for agent roles, schemas, prompt strategies, and evaluation |
-| `equitylens/reports.py` | Reused for DOCX, PDF, and Excel generation |
-| `equitylens/thesis.py` | Reused for transparent deterministic thesis generation |
-| `equitylens/models.py` | Reused for Pydantic domain and agent schemas |
-| `equitylens/db.py` | Retained only for legacy local tests; never instantiated by the Vercel API |
-| `equitylens/ai.py` | JSON validation reused; local Ollama execution is not used in production |
+| `backend/equitylens/financials.py` | Reused unchanged for growth, ratios, and quality checks |
+| `backend/equitylens/valuation.py` | Reused unchanged for DCF, scenarios, sensitivity, and comparables |
+| `backend/equitylens/documents.py` | Reused for extraction, chunking, suggestions, and BM25 retrieval |
+| `backend/equitylens/prompts.py` | Reused for agent roles, schemas, prompt strategies, and evaluation |
+| `backend/equitylens/reports.py` | Reused for DOCX, PDF, and Excel generation |
+| `backend/equitylens/thesis.py` | Reused for transparent deterministic thesis generation |
+| `backend/equitylens/models.py` | Reused for Pydantic domain and agent schemas |
+| `backend/equitylens/db.py` | Retained only for legacy local tests; never instantiated by the Vercel API |
+| `backend/equitylens/ai.py` | JSON validation reused; local Ollama execution is not used in production |
 
 See `MIGRATION.md` for the detailed decision record.
 
 ## Local Development
 
-### Backend
-
-Python 3.12 is configured for Vercel.
+Install Node.js 24, Python 3.12-3.14, and `uv`, then install each service's locked dependencies:
 
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-uvicorn backend.api:app --reload --port 8000
+npm ci --prefix frontend
+cd backend
+uv sync --locked
+cd ..
 ```
 
-FastAPI documentation is available at `http://localhost:8000/docs`.
-
-### Frontend
-
-In another terminal:
+Run both services and their generated binding from the repository root:
 
 ```bash
-cp frontend/.env.example frontend/.env.local
-cd frontend
-npm install
-npm run dev
+npx vercel dev -L
 ```
 
-Open `http://localhost:3000`.
+Open the URL printed by Vercel CLI. The `-L` flag uses only local configuration and does not require Vercel authentication. For independent service development, run `uv run uvicorn app.main:app --reload --port 8000` from `backend/`, set `BACKEND_URL=http://localhost:8000` in `frontend/.env.local`, and run `npm run dev` from `frontend/`.
 
 ## API Surface
 
@@ -121,7 +110,7 @@ The basic deployment is stateless:
 - Extracted document text remains in browser memory only by default.
 - Persisting extracted text in `localStorage` requires explicit consent in Settings.
 - SQLite is not used by the FastAPI application.
-- `backend/storage.py` defines the durable database/object-storage protocol for an optional future provider.
+- `backend/app/storage.py` defines the durable database/object-storage protocol for an optional future provider.
 
 Do not enable browser document-text persistence on shared machines or where policy prohibits local storage.
 
@@ -159,7 +148,7 @@ Disables narrative inference while retaining all deterministic calculations, doc
 
 ### Configured External Inference
 
-Optional and disabled by default. Configure an OpenAI-compatible endpoint only at the backend project level:
+Optional and disabled by default. Configure an OpenAI-compatible endpoint only when required:
 
 ```text
 INFERENCE_URL=https://your-inference-host.example/v1/chat/completions
@@ -173,102 +162,61 @@ This mode does not require or assume a paid provider. `localhost` Ollama is not 
 
 ```bash
 # Python domain and API integration tests
-.venv/bin/python -m pytest
+cd backend
+uv run pytest
+cd ..
 
 # Frontend type checks and component tests
-cd frontend
-npm run check
+npm run check --prefix frontend
 
 # Production Next.js build
-npm run build
+npm run build --prefix frontend
 
 # Dependency audit
-npm audit --audit-level=moderate
+npm audit --prefix frontend --audit-level=moderate
 ```
 
 The suite does not require internet access, AI credentials, Ollama, a cloud database, or uploaded fixtures.
 
 ## Vercel Deployment
 
-### 1. Deploy FastAPI Backend
+The root `vercel.json` builds and deploys both services together. Keep the Vercel project Root Directory at the repository root and select the **Services** framework preset. Do not set build or output-directory overrides.
 
-Create a Vercel project from this repository with:
+For the existing `lukaloverfinal` project:
 
-- Root Directory: `.`
-- Framework detection: FastAPI/Python
-- Python version: read from `.python-version` (`3.12`)
-- Entry point: read from `pyproject.toml` (`backend.api:app`)
-- Optional environment variable for direct browser API clients: `ALLOWED_ORIGINS=https://YOUR-FRONTEND.vercel.app`
+1. Open **Settings > Build and Deployment**.
+2. Set **Framework Preset** to **Services**.
+3. Keep **Root Directory** empty so it resolves to the repository root.
+4. Remove any manually configured `BACKEND_URL`; the `frontend` service binding generates it per deployment.
+5. Keep `lukaloverfinal.vercel.app` assigned to this same project.
+6. Redeploy the latest commit.
 
-`vercel.json` sets the function duration and excludes frontend/tests/data from the Python bundle. No build command is required.
-
-Deploy and verify:
+The equivalent authenticated CLI flow is:
 
 ```bash
+vercel link
+vercel project update --framework services
 vercel deploy
-curl https://YOUR-BACKEND.vercel.app/health
-```
-
-### 2. Deploy Next.js Frontend
-
-Create a second Vercel project from the same repository with:
-
-- Root Directory: `frontend`
-- Framework Preset: Next.js
-- Node.js Version: `24.x` from `frontend/package.json`
-- Build Command: default (`npm run build`)
-- Output Directory: default Next.js output; do not override it
-- Environment variable: `BACKEND_URL=https://YOUR-BACKEND.vercel.app`
-
-Deploy and verify:
-
-```bash
-cd frontend
-vercel deploy
-```
-
-Open the frontend deployment and verify Dashboard reports the Python engine online, then run a DCF calculation and a PDF export.
-
-`BACKEND_URL` is server-only. Do not rename it to `NEXT_PUBLIC_BACKEND_URL`, and do not point it back to the frontend project.
-
-### 3. Production
-
-After preview verification:
-
-```bash
+vercel curl /api/backend/health --deployment YOUR_PREVIEW_URL
 vercel deploy --prod
+vercel curl /api/backend/health
 ```
-
-Set `BACKEND_URL` and `ALLOWED_ORIGINS` separately for Preview and Production when those environments use different domains.
-
-### 4. Assign the Public Domain to Next.js
-
-The repository-root project is intentionally the API. Its `/` route returns service JSON. The public application domain must belong to the frontend project.
-
-If the existing Vercel project is named `lukaloverfinal` and currently serves backend JSON:
-
-1. Rename that backend project to `lukaloverfinal-api` in **Settings > General > Project Name**.
-2. Confirm its generated backend URL, for example `https://lukaloverfinal-api.vercel.app/health`.
-3. Create a second project from the same GitHub repository named `lukaloverfinal`.
-4. Set its Root Directory to `frontend` before deployment.
-5. Add `BACKEND_URL=https://lukaloverfinal-api.vercel.app` to the frontend project's Production, Preview, and Development environments.
-6. Ensure the backend production deployment is reachable by the frontend function. If backend Deployment Protection is enabled, either use its public production domain or configure an approved protection bypass; a protected preview URL will otherwise return an authentication page to the proxy.
-7. Redeploy the frontend project after setting `BACKEND_URL`; environment-variable changes do not alter an existing deployment.
-8. In **Settings > Domains**, ensure `lukaloverfinal.vercel.app` and any custom public domain are assigned to the frontend project, not the backend project.
 
 Expected production checks:
 
 ```text
 https://lukaloverfinal.vercel.app/                    -> EquityLens HTML dashboard
+https://lukaloverfinal.vercel.app/dashboard           -> EquityLens HTML dashboard
+https://lukaloverfinal.vercel.app/research            -> AI research agents
+https://lukaloverfinal.vercel.app/prompts             -> Prompt engineering lab
 https://lukaloverfinal.vercel.app/api/backend/health -> FastAPI health JSON through Next.js
-https://lukaloverfinal-api.vercel.app/                -> FastAPI service JSON
 ```
 
-CORS does not affect normal dashboard requests because the browser calls the same-origin Next.js proxy. Configure `ALLOWED_ORIGINS` only if a browser will call FastAPI directly; never use a wildcard as a fix for an incorrectly assigned domain.
+The backend has no top-level public rewrite and is reachable only through the frontend binding. CORS does not affect normal dashboard requests because the browser calls the same-origin Next.js proxy.
 
 ## Why the Original Error Is Resolved
 
-The root Streamlit `app.py` has been removed. Vercel no longer attempts to load a Streamlit script as an ASGI handler. The backend entry point is explicitly configured as `backend.api:app`, where `app` is a top-level FastAPI instance, and the frontend is a normal Next.js project.
+The root Streamlit `app.py` has been removed. Vercel Services now builds the public Next.js service from `frontend/` and imports `app.main:app` only inside the private `backend/` service. The project root can no longer be misdetected as a standalone FastAPI deployment.
 
 ## Limitations
 

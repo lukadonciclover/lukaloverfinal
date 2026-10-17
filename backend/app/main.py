@@ -14,7 +14,7 @@ from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 
-from backend.schemas import (
+from app.schemas import (
     AgentPromptRequest,
     AgentValidationRequest,
     ChatPromptRequest,
