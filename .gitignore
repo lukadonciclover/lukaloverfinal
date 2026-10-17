@@ -7,3 +7,10 @@ venv/
 data/*.db
 data/files/
 data/exports/
+frontend/node_modules/
+frontend/.next/
+frontend/coverage/
+frontend/.env.local
+.vercel/
+.env.local
+.vercel

@@ -1,0 +1,55 @@
+@import "tailwindcss";
+
+@theme {
+  --color-ink: #071017;
+  --color-panel: #0d1821;
+  --color-line: #1d3341;
+  --color-gold: #d4a84f;
+  --color-teal: #45b6ad;
+  --color-mist: #8fa6b3;
+  --shadow-terminal: 0 18px 60px rgba(0, 0, 0, 0.28);
+}
+
+:root {
+  color-scheme: dark;
+  --background: #071017;
+  --panel: #0d1821;
+  --line: #1d3341;
+  --text: #e9f0f3;
+  --muted: #8fa6b3;
+  --gold: #d4a84f;
+  --teal: #45b6ad;
+}
+
+* { box-sizing: border-box; }
+
+html { background: var(--background); }
+
+body {
+  margin: 0;
+  background:
+    radial-gradient(circle at 78% -10%, rgba(46, 139, 139, 0.12), transparent 32rem),
+    linear-gradient(180deg, #071017 0%, #09131b 100%);
+  color: var(--text);
+  font-family: Arial, Helvetica, sans-serif;
+  min-height: 100vh;
+}
+
+button, input, select, textarea { font: inherit; }
+
+input[type="number"] { font-variant-numeric: tabular-nums; }
+
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: #081119; }
+::-webkit-scrollbar-thumb { background: #29404e; }
+
+@layer components {
+  .eyebrow { @apply text-[11px] font-bold uppercase tracking-[0.2em] text-gold; }
+  .panel { @apply border border-line bg-panel/90 shadow-terminal; }
+  .field { @apply w-full rounded-sm border border-line bg-ink px-3 py-2 text-sm text-slate-100 outline-none transition focus:border-teal; }
+  .table-wrap { @apply overflow-x-auto border border-line; }
+  .data-table { @apply min-w-full border-collapse text-left text-sm; }
+  .data-table th { @apply whitespace-nowrap border-b border-line bg-[#101f2a] px-3 py-2 text-[11px] font-semibold uppercase tracking-wider text-mist; }
+  .data-table td { @apply whitespace-nowrap border-b border-line/70 px-3 py-2 tabular-nums; }
+  .data-table tbody tr:hover { @apply bg-white/[0.025]; }
+}

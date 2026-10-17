@@ -1,7 +1,11 @@
 from __future__ import annotations
 
-from equitylens.db import Repository
+from typing import TYPE_CHECKING
+
 from equitylens.models import Company, FinancialFigure, SourceRef, ValueOrigin
+
+if TYPE_CHECKING:
+    from equitylens.db import Repository
 
 
 SYNTHETIC_DATA = {
@@ -13,31 +17,40 @@ SYNTHETIC_DATA = {
 }
 
 
-def ensure_synthetic_project(repository: Repository) -> int:
-    existing = next((company for company in repository.list_companies() if company.is_synthetic), None)
-    if existing and existing.id:
-        return existing.id
-    company_id = repository.save_company(
-        Company(
-            name="Northstar Components (Synthetic)", ticker="SYNTH", country="United States",
-            industry="Industrial technology", currency="USD", reporting_standard="Synthetic demonstration",
-            latest_financial_year=2025, share_price=31.50, shares_outstanding=50.0,
-            statement_dates="Fiscal year ending December 31", investment_horizon="3-5 years",
-            required_return=0.10, analyst_notes="All figures are synthetic and expressed in USD millions.",
-            is_synthetic=True,
-        )
+def synthetic_company() -> Company:
+    return Company(
+        id=1, name="Northstar Components (Synthetic)", ticker="SYNTH", country="United States",
+        industry="Industrial technology", currency="USD", reporting_standard="Synthetic demonstration",
+        latest_financial_year=2025, share_price=31.50, shares_outstanding=50.0,
+        statement_dates="Fiscal year ending December 31", investment_horizon="3-5 years",
+        required_return=0.10, analyst_notes="All figures are synthetic and expressed in USD millions.",
+        is_synthetic=True,
     )
+
+
+def synthetic_figures(company_id: int = 1) -> list[FinancialFigure]:
     source = SourceRef(
         document_name="Built-in synthetic dataset", quote="Generated solely for product demonstration and testing.",
         reporting_period="2021-2025", currency="USD", unit_scale=1_000_000, confidence=1.0,
     )
-    for period, values in SYNTHETIC_DATA.items():
-        for metric, value in values.items():
-            repository.upsert_figure(
-                FinancialFigure(
-                    company_id=company_id, metric=metric, period=period, value=float(value), currency="USD",
-                    unit_scale=1_000_000, origin=ValueOrigin.REPORTED, source=source,
-                    notes="Synthetic demonstration figure; amount shown in USD millions.",
-                )
-            )
+    return [
+        FinancialFigure(
+            company_id=company_id, metric=metric, period=period, value=float(value), currency="USD",
+            unit_scale=1_000_000, origin=ValueOrigin.REPORTED, source=source,
+            notes="Synthetic demonstration figure; amount shown in USD millions.",
+        )
+        for period, values in SYNTHETIC_DATA.items()
+        for metric, value in values.items()
+    ]
+
+
+def ensure_synthetic_project(repository: "Repository") -> int:
+    existing = next((company for company in repository.list_companies() if company.is_synthetic), None)
+    if existing and existing.id:
+        return existing.id
+    company_id = repository.save_company(
+        synthetic_company().model_copy(update={"id": None})
+    )
+    for figure in synthetic_figures(company_id):
+        repository.upsert_figure(figure)
     return company_id
