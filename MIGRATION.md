@@ -52,7 +52,7 @@ Services availability could not be verified without an authenticated Vercel acco
 
 ## Serverless Boundaries
 
-- Upload requests are rejected above 8 MB.
+- Upload requests are rejected above 4 MB so multipart requests remain below Vercel's 4.5 MB function payload limit.
 - PDFs are rejected above 100 pages.
 - Processing is synchronous only for bounded demo-sized documents.
 - Files and extracted text are not written to the Vercel filesystem.

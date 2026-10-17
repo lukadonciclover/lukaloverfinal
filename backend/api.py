@@ -47,7 +47,8 @@ from equitylens.thesis import generate_deterministic_thesis
 from equitylens.valuation import calculate_dcf, calculate_multiples, peer_statistics, scenario_analysis, sensitivity_analysis
 
 
-MAX_UPLOAD_BYTES = 8 * 1024 * 1024
+# Leave headroom below Vercel's 4.5 MB total function payload limit for multipart framing.
+MAX_UPLOAD_BYTES = 4 * 1024 * 1024
 MAX_PDF_PAGES = 100
 MAX_RETURNED_CHUNKS = 250
 ALLOWED_SUFFIXES = {".pdf", ".csv", ".xlsx"}
@@ -144,7 +145,7 @@ async def process_document(file: UploadFile = File(...), currency: str = Form(de
     if not content:
         raise HTTPException(status_code=400, detail="The uploaded file is empty.")
     if len(content) > MAX_UPLOAD_BYTES:
-        raise HTTPException(status_code=413, detail="The upload exceeds the 8 MB synchronous processing limit.")
+        raise HTTPException(status_code=413, detail="The upload exceeds the 4 MB synchronous processing limit.")
     if suffix == ".pdf":
         try:
             with pymupdf.open(stream=content, filetype="pdf") as pdf:

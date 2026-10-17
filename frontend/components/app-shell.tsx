@@ -62,7 +62,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         <header className="sticky top-0 z-30 flex h-16 items-center justify-between border-b border-line bg-ink/90 px-4 backdrop-blur sm:px-6">
           <button aria-label="Open navigation" onClick={() => setMobileOpen(true)} className="text-mist lg:hidden"><Menu /></button>
           <div className="hidden items-center gap-2 text-xs text-mist sm:flex"><span className="h-2 w-2 rounded-full bg-teal" /> Stateless research workspace</div>
-          <div className="flex items-center gap-3"><span className="hidden text-xs text-mist sm:inline">{workspace.company.currency} · {workspace.company.latest_financial_year}</span><span className="border border-line px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-gold">Manual AI default</span></div>
+          <div className="flex items-center gap-3"><span className="hidden text-xs text-mist sm:inline">{workspace.company.currency} · {workspace.company.latest_financial_year}</span><span className="border border-line px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-gold">{workspace.settings.mode}</span></div>
         </header>
         <main className="mx-auto max-w-[1560px] p-4 sm:p-6 lg:p-8">{children}</main>
       </div>

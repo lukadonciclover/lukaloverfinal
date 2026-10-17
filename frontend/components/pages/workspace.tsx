@@ -57,7 +57,7 @@ export function WorkspacePage() {
         <Card>
           <p className="eyebrow">Source intake</p><h2 className="mt-1 text-xl font-semibold">Process financial documents</h2>
           <button onClick={() => inputRef.current?.click()} className="mt-5 flex min-h-48 w-full flex-col items-center justify-center border border-dashed border-line bg-ink/60 p-6 text-center transition hover:border-teal">
-            <UploadCloud className="text-teal" size={30}/><span className="mt-3 font-semibold">Choose PDF, CSV, or XLSX</span><span className="mt-1 text-xs text-mist">8 MB and 100-page synchronous limit</span>
+            <UploadCloud className="text-teal" size={30}/><span className="mt-3 font-semibold">Choose PDF, CSV, or XLSX</span><span className="mt-1 text-xs text-mist">4 MB and 100-page synchronous limit</span>
           </button>
           <input ref={inputRef} aria-label="Upload financial documents" className="hidden" type="file" accept=".pdf,.csv,.xlsx" multiple onChange={(event) => upload(event.target.files)} />
           <Button loading={uploading} disabled={uploading} className="mt-3 w-full" onClick={() => inputRef.current?.click()}>{uploading ? "Processing document" : "Select documents"}</Button>

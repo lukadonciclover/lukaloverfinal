@@ -129,7 +129,7 @@ Do not enable browser document-text persistence on shared machines or where poli
 
 Synchronous serverless processing is intentionally bounded:
 
-- Maximum upload: 8 MB
+- Maximum upload: 4 MB, leaving multipart overhead below Vercel's 4.5 MB function payload limit
 - Maximum PDF length: 100 pages
 - Supported production uploads: PDF, CSV, XLSX
 - Maximum returned searchable chunks: 250
@@ -198,7 +198,7 @@ Create a Vercel project from this repository with:
 - Framework detection: FastAPI/Python
 - Python version: read from `.python-version` (`3.12`)
 - Entry point: read from `pyproject.toml` (`backend.api:app`)
-- Environment variable: `ALLOWED_ORIGINS=https://YOUR-FRONTEND.vercel.app`
+- Optional environment variable for direct browser API clients: `ALLOWED_ORIGINS=https://YOUR-FRONTEND.vercel.app`
 
 `vercel.json` sets the function duration and excludes frontend/tests/data from the Python bundle. No build command is required.
 
@@ -215,6 +215,9 @@ Create a second Vercel project from the same repository with:
 
 - Root Directory: `frontend`
 - Framework Preset: Next.js
+- Node.js Version: `24.x` from `frontend/package.json`
+- Build Command: default (`npm run build`)
+- Output Directory: default Next.js output; do not override it
 - Environment variable: `BACKEND_URL=https://YOUR-BACKEND.vercel.app`
 
 Deploy and verify:
@@ -226,6 +229,8 @@ vercel deploy
 
 Open the frontend deployment and verify Dashboard reports the Python engine online, then run a DCF calculation and a PDF export.
 
+`BACKEND_URL` is server-only. Do not rename it to `NEXT_PUBLIC_BACKEND_URL`, and do not point it back to the frontend project.
+
 ### 3. Production
 
 After preview verification:
@@ -235,6 +240,31 @@ vercel deploy --prod
 ```
 
 Set `BACKEND_URL` and `ALLOWED_ORIGINS` separately for Preview and Production when those environments use different domains.
+
+### 4. Assign the Public Domain to Next.js
+
+The repository-root project is intentionally the API. Its `/` route returns service JSON. The public application domain must belong to the frontend project.
+
+If the existing Vercel project is named `lukaloverfinal` and currently serves backend JSON:
+
+1. Rename that backend project to `lukaloverfinal-api` in **Settings > General > Project Name**.
+2. Confirm its generated backend URL, for example `https://lukaloverfinal-api.vercel.app/health`.
+3. Create a second project from the same GitHub repository named `lukaloverfinal`.
+4. Set its Root Directory to `frontend` before deployment.
+5. Add `BACKEND_URL=https://lukaloverfinal-api.vercel.app` to the frontend project's Production, Preview, and Development environments.
+6. Ensure the backend production deployment is reachable by the frontend function. If backend Deployment Protection is enabled, either use its public production domain or configure an approved protection bypass; a protected preview URL will otherwise return an authentication page to the proxy.
+7. Redeploy the frontend project after setting `BACKEND_URL`; environment-variable changes do not alter an existing deployment.
+8. In **Settings > Domains**, ensure `lukaloverfinal.vercel.app` and any custom public domain are assigned to the frontend project, not the backend project.
+
+Expected production checks:
+
+```text
+https://lukaloverfinal.vercel.app/                    -> EquityLens HTML dashboard
+https://lukaloverfinal.vercel.app/api/backend/health -> FastAPI health JSON through Next.js
+https://lukaloverfinal-api.vercel.app/                -> FastAPI service JSON
+```
+
+CORS does not affect normal dashboard requests because the browser calls the same-origin Next.js proxy. Configure `ALLOWED_ORIGINS` only if a browser will call FastAPI directly; never use a wildcard as a fix for an incorrectly assigned domain.
 
 ## Why the Original Error Is Resolved
 
