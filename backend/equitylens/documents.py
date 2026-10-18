@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import csv
 import hashlib
 import math
 import re
@@ -236,23 +237,27 @@ def suggest_financial_figures(pages: list[dict[str, Any]], currency: str = "USD"
             metric = max(matches, default=(0, None))[1]
             if not metric:
                 continue
-            values = NUMBER_RE.findall(line)
             periods = PERIOD_RE.findall(line)
-            if not values:
-                continue
-            value = parse_financial_number(values[-1])
+            cells = next(csv.reader([line])) if "," in line else []
+            if len(cells) >= 3 and re.fullmatch(r"(?:19|20)\d{2}(?:-Q[1-4])?", cells[-2].strip()):
+                period = cells[-2].strip()
+                value = parse_financial_number(cells[-1])
+            else:
+                period = periods[-1] if periods else ""
+                values = NUMBER_RE.findall(line)
+                value = parse_financial_number(values[-1]) if values else None
             if value is None:
                 continue
             suggestions.append(
                 {
                     "metric": metric,
-                    "period": periods[-1] if periods else "",
+                    "period": period,
                     "value": value,
                     "currency": currency,
                     "unit_scale": scale,
                     "page": page["page"],
                     "quote": line[:500],
-                    "confidence": 0.55 if periods else 0.35,
+                    "confidence": 0.55 if period else 0.35,
                 }
             )
     return suggestions

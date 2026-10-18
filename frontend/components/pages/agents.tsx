@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { CheckCircle2, Clipboard, Play, ShieldAlert, TriangleAlert } from "lucide-react";
 import { apiPost } from "@/lib/api";
-import { agentInputFingerprint, currentClaimAssessments, currentDcfResult, fingerprint, isAgentRunStale, researchFingerprint } from "@/lib/research";
+import { agentInputFingerprint, currentClaimAssessments, currentDcfResult, financialFingerprint, fingerprint, isAgentRunStale, researchFingerprint } from "@/lib/research";
 import type { AgentRun, ClaimAssessment, EvidenceChunk } from "@/lib/types";
 import { useWorkspace } from "@/lib/workspace";
 import { Button, Card, Field, Notice, PageHeader, Select, TextArea } from "@/components/ui";
@@ -86,7 +86,7 @@ export function AgentsPage() {
       const response = await apiPost<PromptPackage>("/v1/prompts/agent", {
         agent_name: requestedAgent,
         evidence,
-        verified_financials: { figures: workspace.figures },
+        verified_financials: { figures: workspace.figures, analysis: workspace.financialAnalysis?.input_hash === financialFingerprint(workspace.figures) ? workspace.financialAnalysis : null },
         valuation_results: currentDcfResult(workspace) ?? {},
         prior_outputs: prior,
         assumptions: { dcf_inputs: workspace.dcfInputs, workspace_fingerprint: currentInputHash, parent_run_ids: parentRunIds },

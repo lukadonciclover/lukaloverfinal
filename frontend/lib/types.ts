@@ -166,6 +166,8 @@ export interface ChatMessage {
   content: string;
   citations: string[];
   provenance?: string;
+  input_hash?: string;
+  source_ids?: string[];
 }
 
 export interface Experiment {
@@ -182,6 +184,32 @@ export interface Experiment {
   created_at: string;
 }
 
+export interface FinancialAnalysisSnapshot {
+  analysis: Array<Record<string, number | string | null>>;
+  quality_issues: string[];
+  formulas: Record<string, string>;
+  input_hash: string;
+  created_at: string;
+}
+
+export interface ThesisSnapshot {
+  sections: Record<string, Array<{ classification: string; text: string }>>;
+  input_hash: string;
+  created_at: string;
+}
+
+export interface ReportSnapshot {
+  input_hash: string;
+  format: "docx" | "pdf" | "xlsx";
+  filename: string;
+  created_at: string;
+}
+
+export interface WorkflowState {
+  active: boolean;
+  current_step: number;
+}
+
 export interface Workspace {
   version: 2;
   revision: number;
@@ -191,13 +219,33 @@ export interface Workspace {
   dcfInputs: DCFInputs;
   dcfResult: DCFResult | null;
   dcfInputHash: string | null;
+  dcfCalculationHash: string | null;
   comparables: Comparable[];
   agentRuns: Record<string, AgentRun>;
   claimAssessments: ClaimAssessment[];
   chats: ChatMessage[];
   experiments: Experiment[];
+  financialAnalysis: FinancialAnalysisSnapshot | null;
+  thesis: ThesisSnapshot | null;
+  reportSnapshot: ReportSnapshot | null;
+  workflow: WorkflowState;
   settings: {
     mode: "Manual AI Mode" | "Configured External Inference" | "Financial Analytics Only";
     persistDocumentText: boolean;
   };
+}
+
+export interface ResearchProject {
+  id: string;
+  name: string;
+  archived: boolean;
+  created_at: string;
+  updated_at: string;
+  workspace: Workspace;
+}
+
+export interface Portfolio {
+  portfolio_version: 1;
+  active_project_id: string;
+  projects: ResearchProject[];
 }

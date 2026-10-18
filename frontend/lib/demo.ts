@@ -75,11 +75,43 @@ export function createDemoWorkspace(): Workspace {
     dcfInputs: structuredClone(defaultDCF),
     dcfResult: null,
     dcfInputHash: null,
+    dcfCalculationHash: null,
     comparables: [],
     agentRuns: {},
     claimAssessments: [],
     chats: [],
     experiments: [],
+    financialAnalysis: null,
+    thesis: null,
+    reportSnapshot: null,
+    workflow: { active: false, current_step: 1 },
     settings: { mode: "Manual AI Mode", persistDocumentText: false }
+  };
+}
+
+export function createBlankWorkspace(name = "Untitled company"): Workspace {
+  const workspace = createDemoWorkspace();
+  return {
+    ...workspace,
+    company: {
+      ...workspace.company,
+      id: Date.now(),
+      name,
+      ticker: null,
+      country: "",
+      industry: "",
+      reporting_standard: "",
+      latest_financial_year: null,
+      share_price: null,
+      shares_outstanding: null,
+      statement_dates: "",
+      analyst_notes: "",
+      is_synthetic: false
+    },
+    figures: [],
+    documents: [],
+    dcfInputs: { ...structuredClone(defaultDCF), base_revenue: 0, cash: 0, debt: 0, diluted_shares: null, reference_price: null },
+    comparables: [],
+    workflow: { active: true, current_step: 1 }
   };
 }

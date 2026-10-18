@@ -1,5 +1,5 @@
 import { createDemoWorkspace } from "@/lib/demo";
-import { agentInputFingerprint, dcfFingerprint, isAgentRunStale, researchFingerprint } from "@/lib/research";
+import { agentInputFingerprint, currentDcfResult, dcfFingerprint, isAgentRunStale, researchFingerprint, valuationFingerprint, workflowStatus } from "@/lib/research";
 import { parseWorkspace, persistenceCopy } from "@/lib/workspace";
 import type { AgentRun } from "@/lib/types";
 
@@ -56,7 +56,7 @@ describe("workspace safety regressions", () => {
 
   it("marks valuation and dependent agents stale after upstream inputs change", () => {
     const workspace = createDemoWorkspace();
-    workspace.dcfInputHash = dcfFingerprint(workspace.dcfInputs);
+    workspace.dcfInputHash = valuationFingerprint(workspace);
     const financialHash = researchFingerprint(workspace);
     workspace.agentRuns["Financial Analyst"] = run("Financial Analyst", financialHash);
     const valuationHash = agentInputFingerprint(workspace, ["Financial Analyst"]);
@@ -66,8 +66,32 @@ describe("workspace safety regressions", () => {
     expect(isAgentRunStale(workspace.agentRuns["Valuation Analyst"], workspace)).toBe(false);
 
     workspace.dcfInputs = { ...workspace.dcfInputs, wacc: workspace.dcfInputs.wacc + 0.01 };
-    expect(workspace.dcfInputHash).not.toBe(dcfFingerprint(workspace.dcfInputs));
+    expect(workspace.dcfInputHash).not.toBe(valuationFingerprint(workspace));
     expect(isAgentRunStale(workspace.agentRuns["Financial Analyst"], workspace)).toBe(true);
     expect(isAgentRunStale(workspace.agentRuns["Valuation Analyst"], workspace)).toBe(true);
+  });
+
+  it("keeps a DCF stale after ledger changes until assumptions are reconciled", () => {
+    const workspace = createDemoWorkspace();
+    workspace.dcfResult = { forecast: [], enterprise_value: 1, equity_value: 1, implied_share_value: 1, terminal_value: 1, pv_terminal_value: 1, upside_downside: null, timing_convention: "test", scenarios: {}, sensitivity: { rows: [], columns: [], values: [] } };
+    workspace.dcfInputHash = valuationFingerprint(workspace);
+    workspace.dcfCalculationHash = dcfFingerprint(workspace.dcfInputs);
+    expect(currentDcfResult(workspace)).not.toBeNull();
+
+    workspace.figures = workspace.figures.map((figure, index) => index === 0 ? { ...figure, value: (figure.value ?? 0) + 1 } : figure);
+    expect(currentDcfResult(workspace)).toBeNull();
+    expect(workspace.dcfCalculationHash).toBe(dcfFingerprint(workspace.dcfInputs));
+  });
+
+  it("does not complete workflow steps merely because they were visited", () => {
+    const workspace = createDemoWorkspace();
+    workspace.figures = [];
+    workspace.documents = [];
+    workspace.dcfResult = null;
+    workspace.workflow = { active: true, current_step: 10 };
+    const steps = workflowStatus(workspace);
+    expect(steps).toHaveLength(10);
+    expect(steps[9].complete).toBe(false);
+    expect(steps.filter((step) => step.complete).map((step) => step.label)).toEqual(["Create or select company"]);
   });
 });

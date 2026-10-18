@@ -34,7 +34,7 @@ export function ChatPage() {
     try {
       const retrieved = chunks.length ? await apiPost<{ results: EvidenceChunk[] }>("/v1/retrieval/search", { query: requestedQuestion, chunks, limit: 6 }) : { results: [] };
       const response = await apiPost<{ prompt: string }>("/v1/chat/prompt", { question: requestedQuestion, evidence: retrieved.results, calculation_context: currentDcfResult(workspace) ?? {} });
-      const userMessage: ChatMessage = { id: crypto.randomUUID(), role: "user", content: requestedQuestion, citations: [] };
+      const userMessage: ChatMessage = { id: crypto.randomUUID(), role: "user", content: requestedQuestion, citations: [], input_hash: inputHash, source_ids: retrieved.results.map((item) => item.chunk_id ?? "") };
       updateWorkspace((current) => ({ ...current, chats: [...current.chats, userMessage] }));
       setPending({ question: requestedQuestion, evidence: retrieved.results, prompt: response.prompt, inputHash });
       setQuestion("");
@@ -49,7 +49,7 @@ export function ChatPage() {
     try {
       const response = await apiPost<{ valid: boolean; parsed_output: { answer: string; citations: string[] } | null; errors: string[]; provenance: string }>("/v1/chat/validate", { raw_output: raw, question: pending.question, evidence: pending.evidence });
       if (!response.valid || !response.parsed_output) { setError(response.errors.join(" ")); return; }
-      const assistant: ChatMessage = { id: crypto.randomUUID(), role: "assistant", content: response.parsed_output.answer, citations: response.parsed_output.citations, provenance: response.provenance };
+      const assistant: ChatMessage = { id: crypto.randomUUID(), role: "assistant", content: response.parsed_output.answer, citations: response.parsed_output.citations, provenance: response.provenance, input_hash: pending.inputHash, source_ids: pending.evidence.map((item) => item.chunk_id ?? "") };
       updateWorkspace((current) => ({ ...current, chats: [...current.chats, assistant] }));
       setPending(null); setRaw(""); setMessage("Answer saved after schema and citation-allowlist validation. Citation entailment still requires human review.");
     } catch (reason) { setError(reason instanceof Error ? reason.message : "Response validation failed."); }
@@ -69,7 +69,7 @@ export function ChatPage() {
     <div className="grid gap-5 xl:grid-cols-[1.15fr_0.85fr]">
       <Card>
         <div className="flex items-center justify-between"><p className="eyebrow">Conversation</p>{workspace.chats.length > 0 && <Button variant="secondary" onClick={() => { updateWorkspace((current) => ({ ...current, chats: [] })); setPending(null); setRaw(""); }}><Trash2 size={14}/> Clear</Button>}</div>
-        <div role="log" aria-live="polite" className="min-h-[420px] space-y-4">{workspace.chats.length === 0 && <div className="flex min-h-72 items-center justify-center text-center text-sm text-mist">No research questions yet.<br/>Process a document, then ask a source-grounded question.</div>}{workspace.chats.map((chat) => <div key={chat.id} className={`max-w-[86%] border p-4 ${chat.role === "user" ? "ml-auto border-gold/40 bg-gold/5" : "border-line bg-ink"}`}><p className="text-[10px] font-bold uppercase tracking-wider text-mist">{chat.role}{chat.provenance ? ` · ${chat.provenance}` : ""}</p><p className="mt-2 text-sm leading-6">{chat.content}</p>{chat.citations.length > 0 && <p className="mt-3 text-xs text-teal">Sources: {chat.citations.join("; ")}</p>}</div>)}</div>
+        <div role="log" aria-live="polite" className="min-h-[420px] space-y-4">{workspace.chats.length === 0 && <div className="flex min-h-72 items-center justify-center text-center text-sm text-mist">No research questions yet.<br/>Process a document, then ask a source-grounded question.</div>}{workspace.chats.map((chat) => { const stale = Boolean(chat.input_hash && chat.input_hash !== inputHash); return <div key={chat.id} className={`max-w-[86%] border p-4 ${chat.role === "user" ? "ml-auto border-gold/40 bg-gold/5" : "border-line bg-ink"}`}><p className="text-[10px] font-bold uppercase tracking-wider text-mist">{chat.role}{chat.provenance ? ` · ${chat.provenance}` : ""}{stale ? " · stale snapshot" : ""}</p><p className="mt-2 text-sm leading-6">{chat.content}</p>{chat.citations.length > 0 && <p className="mt-3 text-xs text-teal">Sources: {chat.citations.join("; ")}</p>}</div>; })}</div>
         <div className="mt-4 flex gap-2"><input aria-label="Research question" maxLength={2000} disabled={loading || analyticsOnly || Boolean(pending)} className="field" value={question} onChange={(event) => setQuestion(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.repeat) { event.preventDefault(); void ask(); } }} placeholder={pending ? "Validate or cancel the pending answer first" : "What evidence explains the margin change?"}/><Button aria-label="Prepare research question" loading={loading} disabled={analyticsOnly || Boolean(pending)} onClick={ask}><Send size={15}/></Button></div>
       </Card>
       <div className="space-y-5">

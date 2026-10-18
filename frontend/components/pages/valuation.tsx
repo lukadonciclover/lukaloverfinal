@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { Plus, Trash2 } from "lucide-react";
 import { apiPost } from "@/lib/api";
-import { dcfFingerprint, fingerprint } from "@/lib/research";
+import { dcfFingerprint, fingerprint, valuationFingerprint } from "@/lib/research";
 import type { Comparable, DCFInputs, DCFResult } from "@/lib/types";
 import { useWorkspace } from "@/lib/workspace";
 import { Button, Card, Field, Notice, PageHeader, Stat, formatMoney, formatNumber, formatPercent } from "@/components/ui";
@@ -23,34 +23,43 @@ export function ValuationPage() {
   const controllerRef = useRef<AbortController | null>(null);
   const peerRequestRef = useRef(0);
   const inputs = workspace.dcfInputs;
-  const inputHash = dcfFingerprint(inputs);
+  const inputHash = valuationFingerprint(workspace);
+  const calculationHash = dcfFingerprint(inputs);
   const currentHashRef = useRef(inputHash);
   currentHashRef.current = inputHash;
   const resultCurrent = Boolean(workspace.dcfResult && workspace.dcfInputHash === inputHash);
+  const calculationRequired = !workspace.dcfResult || workspace.dcfCalculationHash !== calculationHash;
+  const latestRevenueFigure = [...workspace.figures].filter((figure) => figure.metric === "revenue" && figure.value !== null).sort((left, right) => left.period.localeCompare(right.period)).at(-1);
+  const latestRevenue = latestRevenueFigure?.value ?? null;
 
   const updateInput = <K extends keyof DCFInputs>(key: K, value: DCFInputs[K]) => updateWorkspace((current) => ({ ...current, dcfInputs: { ...current.dcfInputs, [key]: value } }));
   const updateYear = (key: ForecastKey, index: number, value: number) => updateInput(key, inputs[key].map((item, itemIndex) => itemIndex === index ? value : item));
 
-  useEffect(() => {
-    if (!hydrated) return;
+  async function runValuation() {
     controllerRef.current?.abort();
     const controller = new AbortController();
     controllerRef.current = controller;
     const requestedHash = inputHash;
-    const timer = window.setTimeout(async () => {
-      setLoading(true);
-      setError("");
-      try {
-        const result = await apiPost<DCFResult>("/v1/valuation/dcf", inputs, { signal: controller.signal });
-        if (requestedHash === currentHashRef.current) updateWorkspace((current) => ({ ...current, dcfResult: result, dcfInputHash: requestedHash }));
-      } catch (reason) {
-        if (!controller.signal.aborted) setError(reason instanceof Error ? reason.message : "Valuation failed.");
-      } finally {
-        if (controllerRef.current === controller) setLoading(false);
-      }
+    const requestedCalculationHash = calculationHash;
+    setLoading(true);
+    setError("");
+    try {
+      const result = await apiPost<DCFResult>("/v1/valuation/dcf", inputs, { signal: controller.signal });
+      if (requestedHash === currentHashRef.current) updateWorkspace((current) => ({ ...current, dcfResult: result, dcfInputHash: requestedHash, dcfCalculationHash: requestedCalculationHash }));
+    } catch (reason) {
+      if (!controller.signal.aborted) setError(reason instanceof Error ? reason.message : "Valuation failed.");
+    } finally {
+      if (controllerRef.current === controller) setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    if (!hydrated || !calculationRequired) return;
+    const timer = window.setTimeout(() => {
+      void runValuation();
     }, 450);
-    return () => { window.clearTimeout(timer); controller.abort(); };
-  }, [hydrated, inputHash, inputs, updateWorkspace]);
+    return () => { window.clearTimeout(timer); controllerRef.current?.abort(); };
+  }, [calculationHash, calculationRequired, hydrated, inputHash]);
 
   const result = resultCurrent ? workspace.dcfResult : null;
   const scenarioData = result ? Object.entries(result.scenarios).map(([scenario, scenarioResult]) => ({
@@ -112,7 +121,8 @@ export function ValuationPage() {
         actions={<span className="flex items-center gap-2 text-xs text-mist"><span className={`h-2 w-2 rounded-full ${loading ? "animate-pulse bg-gold" : resultCurrent ? "bg-teal" : "bg-red-400"}`}/>{modelState}</span>}
       />
       {error && <Notice kind="error">{error} The previous result remains visible only as stale and will not be treated as current downstream.</Notice>}
-      {!resultCurrent && result && !loading && !error && <Notice kind="warning">Inputs changed after this valuation was calculated. Current figures are hidden from report-ready status until recalculation succeeds.</Notice>}
+      {!resultCurrent && workspace.dcfResult && !loading && !error && <Notice kind="warning">Inputs, financial figures, or company currency changed after this valuation was calculated. Stale outputs are hidden. {!calculationRequired && <Button variant="secondary" className="ml-2" onClick={() => void runValuation()}>Confirm assumptions and recalculate</Button>}</Notice>}
+      {latestRevenue !== null && latestRevenue !== inputs.base_revenue && <div className="mt-3"><Notice kind="warning">Latest ledger revenue is {formatNumber(latestRevenue, 2)} in source display units, while DCF base revenue is {formatNumber(inputs.base_revenue, 2)}. <Button variant="secondary" className="ml-2" onClick={() => updateInput("base_revenue", latestRevenue)}>Use latest revenue</Button></Notice></div>}
       <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <Stat label="Enterprise value" value={formatMoney(result?.enterprise_value, workspace.company.currency)} detail={resultCurrent ? "Current" : "Stale"} />
         <Stat label="Equity value" value={formatMoney(result?.equity_value, workspace.company.currency)} detail={resultCurrent ? "Current" : "Stale"} />

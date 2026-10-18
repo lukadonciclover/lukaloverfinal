@@ -1,4 +1,10 @@
-from equitylens.documents import chunk_pages, detect_unit_scale, parse_financial_number, search_chunks, suggest_financial_figures
+from equitylens.documents import (
+    chunk_pages,
+    detect_unit_scale,
+    parse_financial_number,
+    search_chunks,
+    suggest_financial_figures,
+)
 
 
 def test_number_parsing_and_unit_detection():
@@ -26,3 +32,13 @@ def test_financial_suggestions_are_review_only_with_provenance():
     assert suggestions[0]["value"] == 1250
     assert suggestions[0]["page"] == 8
     assert suggestions[0]["confidence"] < 1
+
+
+def test_csv_suggestions_preserve_quarterly_periods():
+    suggestions = suggest_financial_figures(
+        [{"page": 1, "text": "Revenue,2024-Q1,120\nRevenue,2024-Q2,135"}], "USD"
+    )
+    assert [(item["period"], item["value"]) for item in suggestions] == [
+        ("2024-Q1", 120),
+        ("2024-Q2", 135),
+    ]

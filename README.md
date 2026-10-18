@@ -25,7 +25,8 @@ The browser calls only the Next.js origin. `frontend/app/api/backend/[...path]/r
 
 - Ten working research modules: dashboard, workspace, financial analysis, valuation, agents, thesis, chat, reports, prompt lab, and settings
 - Responsive terminal-style dark interface with collapsible navigation
-- Versioned browser-local workspace with IndexedDB storage, privacy-aware JSON export, validated import, and localStorage fallback
+- Multiple isolated browser-local company projects with create, rename, duplicate, switch, archive/restore, project export/import, IndexedDB storage, and localStorage fallback
+- Optional ten-step New Investment Analysis workflow with artifact-based progress and persistent back/forward navigation
 - PDF, CSV, and XLSX processing with source pages and review suggestions
 - Editable historical financial statements and data-origin labels
 - Python-calculated ratios that preserve missing values
@@ -37,6 +38,7 @@ The browser calls only the Next.js origin. `frontend/app/api/backend/[...path]/r
 - DOCX, PDF, and XLSX report generation
 - Prompt strategy comparison with objective and human-review metrics separated
 - Deterministic claim checks for exact excerpts, source locators, and calculation reconciliation
+- Persisted financial-analysis, thesis, and report manifests tied to dependency fingerprints; stale artifacts are hidden or excluded
 - Optional external OpenAI-compatible inference only when the backend operator configures it
 - No paid API, AI subscription, database, or object-storage service required
 
@@ -107,8 +109,8 @@ All arithmetic runs in Python. An LLM never calculates DCF outputs, ratios, scen
 
 The basic deployment is stateless:
 
-- Workspace state is stored primarily in browser IndexedDB, with a capacity-limited `localStorage` fallback.
-- Workspace JSON can be exported and reimported.
+- The project portfolio is stored primarily in browser IndexedDB, with a capacity-limited `localStorage` fallback.
+- The active project can be exported; imports create a separate isolated project rather than replacing another company.
 - Uploaded bytes are processed in memory and discarded after each response.
 - Extracted document text remains in browser memory only by default.
 - Persisting extracted text, excerpts, source-bearing agent packets, or research chat requires explicit consent in Settings.
@@ -224,7 +226,7 @@ The root Streamlit `app.py` has been removed. Vercel Services now builds the pub
 
 ## Limitations
 
-- No authentication is included because the basic deployment stores workspace data in one browser rather than on a shared server.
+- No authentication is included because the basic deployment stores isolated company projects in one browser rather than on a shared server.
 - Browser IndexedDB/localStorage is not a substitute for regulated document management.
 - Currency conversion and market data remain manual to avoid hidden external dependencies.
 - Lexical BM25 retrieval can miss passages using unrelated terminology.

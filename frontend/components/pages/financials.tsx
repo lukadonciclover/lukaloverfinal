@@ -13,12 +13,12 @@ type AnalysisResponse = { analysis: Array<Record<string, number | string | null>
 const metrics = ["revenue", "cost_of_goods_sold", "gross_profit", "operating_expenses", "ebitda", "ebit", "interest_expense", "tax_expense", "net_income", "cash", "short_term_investments", "total_assets", "current_assets", "current_liabilities", "total_liabilities", "short_term_debt", "long_term_debt", "total_equity", "net_working_capital", "operating_cash_flow", "capital_expenditure", "investing_cash_flow", "financing_cash_flow", "free_cash_flow"];
 
 export function FinancialsPage() {
-  const { workspace, updateWorkspace } = useWorkspace();
-  const [analysis, setAnalysis] = useState<AnalysisResponse | null>(null);
+  const { workspace, updateWorkspace, hydrated } = useWorkspace();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const requestRef = useRef<AbortController | null>(null);
   const figureHash = financialFingerprint(workspace.figures);
+  const analysis = workspace.financialAnalysis?.input_hash === figureHash ? workspace.financialAnalysis : null;
   const currentHashRef = useRef(figureHash);
   currentHashRef.current = figureHash;
   const suggestions = workspace.documents.flatMap((document) => document.suggestions.map((item) => ({ ...item, documentName: document.name, documentId: document.identifier })));
@@ -28,7 +28,12 @@ export function FinancialsPage() {
   }, [workspace.figures]);
 
   function editFigure(index: number, field: keyof FinancialFigure, value: string) {
-    updateWorkspace((current) => ({ ...current, figures: current.figures.map((figure, itemIndex) => itemIndex === index ? { ...figure, [field]: field === "value" ? (value === "" ? null : Number(value)) : field === "unit_scale" ? (value === "" ? 1 : Number(value)) : value } : figure) }));
+    updateWorkspace((current) => ({ ...current, figures: current.figures.map((figure, itemIndex) => {
+      if (itemIndex !== index) return figure;
+      const nextValue = field === "value" ? (value === "" ? null : Number(value)) : field === "unit_scale" ? (value === "" ? 1 : Number(value)) : value;
+      if (field === "origin") return { ...figure, origin: value as FinancialFigure["origin"], source: value === "reported" ? figure.source : null };
+      return { ...figure, [field]: nextValue, source: null, origin: "user-supplied", notes: "Edited after source acceptance; source provenance must be re-verified." };
+    }) }));
   }
   function acceptSuggestion(item: FigureSuggestion & { documentName: string; documentId: string }) {
     const figure: FinancialFigure = { company_id: workspace.company.id, metric: item.metric, period: item.period || String(workspace.company.latest_financial_year ?? ""), value: item.value, currency: item.currency, unit_scale: item.unit_scale, origin: "reported", source: { document_identifier: item.documentId, document_name: item.documentName, page: item.page, quote: item.quote, reporting_period: item.period, currency: item.currency, unit_scale: item.unit_scale, confidence: item.confidence }, notes: "Accepted document extraction suggestion; analyst review does not independently prove accuracy." };
@@ -42,17 +47,23 @@ export function FinancialsPage() {
     setLoading(true); setError("");
     try {
       const response = await apiPost<AnalysisResponse>("/v1/financials/analyze", { figures: workspace.figures }, { signal: controller.signal });
-      if (requestedHash === currentHashRef.current) setAnalysis(response);
+      if (requestedHash === currentHashRef.current) updateWorkspace((current) => ({ ...current, financialAnalysis: { ...response, input_hash: requestedHash, created_at: new Date().toISOString() } }));
     }
     catch (reason) { if (!controller.signal.aborted) setError(reason instanceof Error ? reason.message : "Analysis failed."); }
     finally { if (requestRef.current === controller) setLoading(false); }
   }
-  useEffect(() => { setAnalysis(null); requestRef.current?.abort(); }, [figureHash]);
+  useEffect(() => {
+    requestRef.current?.abort();
+    if (!hydrated || !workspace.figures.length || analysis) return;
+    const timer = window.setTimeout(() => { void runAnalysis(); }, 400);
+    return () => window.clearTimeout(timer);
+  }, [analysis, figureHash, hydrated, workspace.figures.length]);
 
   return (
     <>
       <PageHeader kicker="Financial statement analysis" title="Audit the history before forecasting it." description="Edit verified figures, preserve missing values, review source provenance, and calculate performance with the Python engine." actions={<Button loading={loading} onClick={runAnalysis}>Calculate performance</Button>} />
       {error && <Notice kind="error">{error}</Notice>}
+      {!analysis && workspace.financialAnalysis && <Notice kind="warning">Financial figures changed after the saved analysis. Ratios are recalculating and downstream artifacts are stale.</Notice>}
       {suggestions.length > 0 && <Card className="mb-5"><p className="eyebrow">Pending review</p><h2 className="mt-1 text-xl font-semibold">Document extraction suggestions</h2><Notice kind="warning"><span className="font-semibold">Review required.</span> Suggestions do not affect calculations until accepted. Acceptance records provenance but is not independent verification.</Notice>{suggestions.length > 50 && <p className="mt-3 text-xs text-gold">Showing the first 50 of {suggestions.length} suggestions.</p>}<div className="table-wrap mt-4"><table className="data-table"><thead><tr><th>Metric</th><th>Period</th><th>Value</th><th>Scale</th><th>Source</th><th>Confidence</th><th></th></tr></thead><tbody>{suggestions.slice(0, 50).map((item, index) => <tr key={`${item.documentId}-${item.page}-${index}`}><td>{item.metric}</td><td>{item.period || "Missing"}</td><td>{formatNumber(item.value, 2)}</td><td>{formatNumber(item.unit_scale, 0)}</td><td className="max-w-72 truncate" title={item.quote}>{item.documentName}, p. {item.page}</td><td>{formatPercent(item.confidence)}</td><td><Button variant="secondary" onClick={() => acceptSuggestion(item)}><Check size={14}/> Accept</Button></td></tr>)}</tbody></table></div></Card>}
       <Card>
         <div className="mb-4 flex flex-wrap items-end justify-between gap-3"><div><p className="eyebrow">Financial ledger</p><h2 className="mt-1 text-xl font-semibold">Historical financial data and origins</h2></div><Button variant="secondary" onClick={() => updateWorkspace((current) => ({ ...current, figures: [...current.figures, { company_id: current.company.id, metric: "revenue", period: String(current.company.latest_financial_year ?? ""), value: null, currency: current.company.currency, unit_scale: 1, origin: "user-supplied", notes: "" }] }))}><Plus size={15}/> Add row</Button></div>

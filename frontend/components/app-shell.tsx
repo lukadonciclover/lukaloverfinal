@@ -8,7 +8,9 @@ import {
   Bot, Building2, Calculator, ChartNoAxesCombined, ChevronLeft, ChevronRight, FileOutput,
   Gauge, Menu, MessageSquareText, Search, Settings, ShieldCheck, Sparkles, X
 } from "lucide-react";
+import { workflowStatus } from "@/lib/research";
 import { useWorkspace } from "@/lib/workspace";
+import { GuidedWorkflow } from "@/components/guided-workflow";
 
 export const navigation = [
   { href: "/dashboard", label: "Dashboard", icon: Gauge },
@@ -30,8 +32,16 @@ export function AppShell({ children }: { children: ReactNode }) {
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [query, setQuery] = useState("");
-  const { workspace } = useWorkspace();
+  const { workspace, projects, activeProjectId, switchProject, updateWorkspace } = useWorkspace();
   const filtered = navigation.filter((item) => item.label.toLowerCase().includes(query.toLowerCase()));
+  const navigate = (href: string) => {
+    setMobileOpen(false);
+    if (!workspace.workflow.active) return;
+    const steps = workflowStatus(workspace);
+    const matching = steps.map((step, index) => ({ step, index })).filter(({ step }) => step.route === href);
+    const target = matching.find(({ step }) => !step.complete) ?? matching[0];
+    if (target) updateWorkspace((current) => ({ ...current, workflow: { ...current.workflow, current_step: target.index + 1 } }));
+  };
 
   const sidebar = (showLabels: boolean) => (
     <>
@@ -44,7 +54,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         {filtered.map((item) => {
           const active = path === item.href || (path === "/" && item.href === "/dashboard");
           const Icon = item.icon;
-          return <Link key={item.href} href={item.href} aria-current={active ? "page" : undefined} onClick={() => setMobileOpen(false)} title={!showLabels ? item.label : undefined} className={clsx("flex items-center gap-3 border-l-2 px-3 py-2.5 text-sm transition", active ? "border-gold bg-gold/10 text-white" : "border-transparent text-mist hover:bg-white/[0.03] hover:text-white")}><Icon size={17} />{showLabels && <span>{item.label}</span>}</Link>;
+          return <Link key={item.href} href={item.href} aria-current={active ? "page" : undefined} onClick={() => navigate(item.href)} title={!showLabels ? item.label : undefined} className={clsx("flex items-center gap-3 border-l-2 px-3 py-2.5 text-sm transition", active ? "border-gold bg-gold/10 text-white" : "border-transparent text-mist hover:bg-white/[0.03] hover:text-white")}><Icon size={17} />{showLabels && <span>{item.label}</span>}</Link>;
         })}
       </nav>
       <div className="border-t border-line p-3">
@@ -62,9 +72,10 @@ export function AppShell({ children }: { children: ReactNode }) {
         <header className="sticky top-0 z-30 flex h-16 items-center justify-between border-b border-line bg-ink/90 px-4 backdrop-blur sm:px-6">
           <button aria-label="Open navigation" onClick={() => setMobileOpen(true)} className="text-mist lg:hidden"><Menu /></button>
           <div className="hidden items-center gap-2 text-xs text-mist sm:flex"><span className="h-2 w-2 rounded-full bg-teal" /> Stateless research workspace</div>
-          <div className="flex items-center gap-3"><span className="hidden text-xs text-mist sm:inline">{workspace.company.currency} · {workspace.company.latest_financial_year}</span><span className="border border-line px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-gold">{workspace.settings.mode}</span></div>
+          <div className="flex items-center gap-3"><select aria-label="Active research project" className="max-w-44 border border-line bg-panel px-2 py-1 text-xs" value={activeProjectId} onChange={(event) => switchProject(event.target.value)}>{projects.filter((project) => !project.archived).map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select><span className="hidden text-xs text-mist sm:inline">{workspace.company.currency} · {workspace.company.latest_financial_year ?? "No FY"}</span><span className="hidden border border-line px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-gold sm:inline">{workspace.settings.mode}</span></div>
         </header>
-        <main className="mx-auto max-w-[1560px] p-4 sm:p-6 lg:p-8">{children}</main>
+        <GuidedWorkflow />
+        <main key={activeProjectId} className="mx-auto max-w-[1560px] p-4 sm:p-6 lg:p-8">{children}</main>
       </div>
     </div>
   );

@@ -6,7 +6,8 @@ const storage = vi.hoisted(() => ({ load: vi.fn(), save: vi.fn() }));
 
 vi.mock("@/lib/storage", () => ({
   loadIndexedWorkspace: storage.load,
-  saveIndexedWorkspace: storage.save
+  saveIndexedWorkspace: storage.save,
+  deleteIndexedWorkspace: vi.fn()
 }));
 
 import { useWorkspace, WorkspaceProvider } from "@/lib/workspace";
@@ -25,7 +26,7 @@ describe("workspace hydration failure", () => {
 
     render(<WorkspaceProvider><PersistenceProbe /></WorkspaceProvider>);
 
-    expect(await screen.findByText(/saved workspace was preserved but not loaded/i)).toBeInTheDocument();
+    expect(await screen.findByText(/saved projects were preserved but not loaded/i)).toBeInTheDocument();
     await waitFor(() => expect(storage.save).not.toHaveBeenCalled());
   });
 });
