@@ -25,17 +25,18 @@ The browser calls only the Next.js origin. `frontend/app/api/backend/[...path]/r
 
 - Ten working research modules: dashboard, workspace, financial analysis, valuation, agents, thesis, chat, reports, prompt lab, and settings
 - Responsive terminal-style dark interface with collapsible navigation
-- Browser-local demo workspace with JSON export and reimport
+- Versioned browser-local workspace with IndexedDB storage, privacy-aware JSON export, validated import, and localStorage fallback
 - PDF, CSV, and XLSX processing with source pages and review suggestions
 - Editable historical financial statements and data-origin labels
 - Python-calculated ratios that preserve missing values
 - Five-year DCF with bear/base/bull scenarios and sensitivity matrix
 - Comparable-company multiples with invalid denominator exclusion
-- Four distinct, schema-validated manual AI agents with prompt chaining
+- Four research agents plus an Evidence Verification Agent, with schema validation, source IDs, provenance, and stale-input fingerprints
 - Grounded research-chat prompt preparation and manual response validation
 - Deterministic investment thesis fallback
 - DOCX, PDF, and XLSX report generation
 - Prompt strategy comparison with objective and human-review metrics separated
+- Deterministic claim checks for exact excerpts, source locators, and calculation reconciliation
 - Optional external OpenAI-compatible inference only when the backend operator configures it
 - No paid API, AI subscription, database, or object-storage service required
 
@@ -45,13 +46,14 @@ The migration keeps these framework-independent modules as the calculation sourc
 
 | Module | Status |
 |---|---|
-| `backend/equitylens/financials.py` | Reused unchanged for growth, ratios, and quality checks |
-| `backend/equitylens/valuation.py` | Reused unchanged for DCF, scenarios, sensitivity, and comparables |
-| `backend/equitylens/documents.py` | Reused for extraction, chunking, suggestions, and BM25 retrieval |
-| `backend/equitylens/prompts.py` | Reused for agent roles, schemas, prompt strategies, and evaluation |
-| `backend/equitylens/reports.py` | Reused for DOCX, PDF, and Excel generation |
-| `backend/equitylens/thesis.py` | Reused for transparent deterministic thesis generation |
-| `backend/equitylens/models.py` | Reused for Pydantic domain and agent schemas |
+| `backend/equitylens/financials.py` | Extended with scale normalization, capex-sign handling, and blocking consistency checks |
+| `backend/equitylens/valuation.py` | Extended with finite-input validation and resilient scenario handling |
+| `backend/equitylens/documents.py` | Extended extraction, chunk provenance, SHA-256 identifiers, suggestions, and BM25 retrieval |
+| `backend/equitylens/prompts.py` | Extended with the fifth agent, source IDs, versioning, and repeatable benchmark metrics |
+| `backend/equitylens/evidence.py` | Deterministic source-locator, exact-excerpt, and calculation reconciliation checks |
+| `backend/equitylens/reports.py` | Extended DOCX, PDF, and Excel generation with current DCF and evidence-review exports |
+| `backend/equitylens/thesis.py` | Transparent deterministic thesis generation with explicit statement classifications |
+| `backend/equitylens/models.py` | Tightened Pydantic domain, evidence, and agent schemas |
 | `backend/equitylens/db.py` | Retained only for legacy local tests; never instantiated by the Vercel API |
 | `backend/equitylens/ai.py` | JSON validation reused; local Ollama execution is not used in production |
 
@@ -94,6 +96,7 @@ Open the URL printed by Vercel CLI. The `-L` flag uses only local configuration 
 | `GET /v1/prompts/benchmarks` | Repeatable prompt benchmark definitions |
 | `POST /v1/prompts/strategy` | Prompt-strategy generation |
 | `POST /v1/prompts/evaluate` | Objective benchmark checks |
+| `POST /v1/evidence/verify` | Deterministic claim locator, excerpt, and calculation checks |
 | `POST /v1/thesis` | Deterministic classified thesis |
 | `POST /v1/reports/{docx,pdf,xlsx}` | Downloadable report generation |
 | `POST /v1/inference/generate` | Disabled unless external inference is configured |
@@ -104,15 +107,16 @@ All arithmetic runs in Python. An LLM never calculates DCF outputs, ratios, scen
 
 The basic deployment is stateless:
 
-- Workspace state is stored in browser `localStorage`.
+- Workspace state is stored primarily in browser IndexedDB, with a capacity-limited `localStorage` fallback.
 - Workspace JSON can be exported and reimported.
 - Uploaded bytes are processed in memory and discarded after each response.
 - Extracted document text remains in browser memory only by default.
-- Persisting extracted text in `localStorage` requires explicit consent in Settings.
+- Persisting extracted text, excerpts, source-bearing agent packets, or research chat requires explicit consent in Settings.
+- When retention is off, persistent copies and exports redact document chunks, excerpts, source-bearing agent output, claim checks, and chat.
 - SQLite is not used by the FastAPI application.
 - `backend/app/storage.py` defines the durable database/object-storage protocol for an optional future provider.
 
-Do not enable browser document-text persistence on shared machines or where policy prohibits local storage.
+Do not enable browser document-text persistence on shared machines or where policy prohibits browser storage. IndexedDB remains local browser storage, not a durable or regulated system of record.
 
 ## Document Limits
 
@@ -176,7 +180,7 @@ npm run build --prefix frontend
 npm audit --prefix frontend --audit-level=moderate
 ```
 
-The suite does not require internet access, AI credentials, Ollama, a cloud database, or uploaded fixtures.
+The suite does not require internet access, AI credentials, Ollama, a cloud database, or uploaded fixtures. See `AUDIT.md` for the page-by-page audit, verification matrix, and residual limitations.
 
 ## Vercel Deployment
 
@@ -221,9 +225,10 @@ The root Streamlit `app.py` has been removed. Vercel Services now builds the pub
 ## Limitations
 
 - No authentication is included because the basic deployment stores workspace data in one browser rather than on a shared server.
-- Browser localStorage is not a substitute for regulated document management.
+- Browser IndexedDB/localStorage is not a substitute for regulated document management.
 - Currency conversion and market data remain manual to avoid hidden external dependencies.
 - Lexical BM25 retrieval can miss passages using unrelated terminology.
 - PDF table extraction varies by filing format and always requires analyst review.
-- Schema-valid AI output can still be factually wrong; source verification remains mandatory.
+- Deterministic excerpt checks establish locator and text overlap, not full semantic entailment; consequential claims still require analyst review.
+- Schema-valid AI output can still be factually wrong; the Evidence Verification Agent and human source review remain mandatory.
 - Automated prompt scores do not grade interpretive quality or citation entailment.

@@ -2,12 +2,11 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 from equitylens.models import AgentRun, Company, DocumentRecord, FinancialFigure
-
 
 SCHEMA = """
 PRAGMA foreign_keys = ON;
@@ -59,7 +58,7 @@ CREATE TABLE IF NOT EXISTS workspace_state (
 
 
 def utcnow() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 class Repository:
@@ -82,14 +81,14 @@ class Repository:
             if company.id:
                 assignments = ", ".join(f"{key} = ?" for key in values)
                 conn.execute(
-                    f"UPDATE companies SET {assignments} WHERE id = ?",  # noqa: S608
+                    f"UPDATE companies SET {assignments} WHERE id = ?",
                     [*values.values(), company.id],
                 )
                 return company.id
             columns = ", ".join(values)
             placeholders = ", ".join("?" for _ in values)
             cursor = conn.execute(
-                f"INSERT INTO companies ({columns}, created_at) VALUES ({placeholders}, ?)",  # noqa: S608
+                f"INSERT INTO companies ({columns}, created_at) VALUES ({placeholders}, ?)",
                 [*values.values(), utcnow()],
             )
             return int(cursor.lastrowid)
@@ -128,7 +127,7 @@ class Repository:
         assignments = ", ".join(f"{key} = ?" for key in clean)
         with self.connect() as conn:
             conn.execute(
-                f"UPDATE documents SET {assignments} WHERE id = ?",  # noqa: S608
+                f"UPDATE documents SET {assignments} WHERE id = ?",
                 [*clean.values(), document_id],
             )
 
@@ -209,7 +208,8 @@ class Repository:
         figures = []
         for row in rows:
             item = dict(row)
-            source = json.loads(item.pop("source_json")) if item.get("source_json") else None
+            source_json = item.pop("source_json", None)
+            source = json.loads(source_json) if source_json else None
             item["source"] = source
             figures.append(FinancialFigure.model_validate(item))
         return figures

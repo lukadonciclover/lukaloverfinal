@@ -20,6 +20,7 @@ export interface Company {
 
 export interface SourceRef {
   document_id?: number | null;
+  document_identifier?: string;
   document_name: string;
   page?: number | null;
   quote: string;
@@ -43,6 +44,7 @@ export interface FinancialFigure {
 }
 
 export interface EvidenceChunk {
+  chunk_id?: string;
   page: number;
   text: string;
   document_name: string;
@@ -120,13 +122,42 @@ export interface Comparable {
 }
 
 export interface AgentRun {
+  id: string;
   agent_name: string;
   prompt: string;
   raw_output: string;
   parsed_output: Record<string, unknown> | null;
   valid: boolean;
+  schema_valid: boolean;
   errors: string[];
   provenance: string;
+  model_id: string;
+  prompt_version: string;
+  prompt_hash: string;
+  input_hash: string;
+  source_ids: string[];
+  assumptions: Record<string, unknown>;
+  created_at: string;
+}
+
+export type ClaimStatus = "verified" | "partially_supported" | "unsupported" | "contradicted";
+
+export interface ClaimCitation {
+  source_id: string;
+  document_name: string;
+  page: number | null;
+  excerpt: string;
+}
+
+export interface ClaimAssessment {
+  claim_id: string;
+  claim: string;
+  status: ClaimStatus;
+  citations: ClaimCitation[];
+  rationale: string;
+  checks: string[];
+  human_review_required: boolean;
+  calculation_value?: number | null;
 }
 
 export interface ChatMessage {
@@ -141,19 +172,28 @@ export interface Experiment {
   id: string;
   strategy: string;
   task: string;
+  prompt: string;
+  prompt_version: string;
+  benchmark_version: string;
+  model_id: string;
   output: string;
-  metrics: Record<string, unknown>;
+  objective_metrics: Record<string, unknown>;
+  human_judgments: { rating: number | null; notes: string };
+  created_at: string;
 }
 
 export interface Workspace {
-  version: 1;
+  version: 2;
+  revision: number;
   company: Company;
   figures: FinancialFigure[];
   documents: DocumentRecord[];
   dcfInputs: DCFInputs;
   dcfResult: DCFResult | null;
+  dcfInputHash: string | null;
   comparables: Comparable[];
   agentRuns: Record<string, AgentRun>;
+  claimAssessments: ClaimAssessment[];
   chats: ChatMessage[];
   experiments: Experiment[];
   settings: {

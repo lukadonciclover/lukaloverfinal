@@ -14,24 +14,25 @@ async function parseError(response: Response): Promise<string> {
   }
 }
 
-export async function apiGet<T>(path: string): Promise<T> {
-  const response = await fetch(`/api/backend${path}`, { cache: "no-store" });
+export async function apiGet<T>(path: string, options: { signal?: AbortSignal } = {}): Promise<T> {
+  const response = await fetch(`/api/backend${path}`, { cache: "no-store", signal: options.signal });
   if (!response.ok) throw new ApiError(await parseError(response), response.status);
   return response.json() as Promise<T>;
 }
 
-export async function apiPost<T>(path: string, body: unknown): Promise<T> {
+export async function apiPost<T>(path: string, body: unknown, options: { signal?: AbortSignal } = {}): Promise<T> {
   const response = await fetch(`/api/backend${path}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body)
+    body: JSON.stringify(body),
+    signal: options.signal
   });
   if (!response.ok) throw new ApiError(await parseError(response), response.status);
   return response.json() as Promise<T>;
 }
 
-export async function apiUpload<T>(path: string, form: FormData): Promise<T> {
-  const response = await fetch(`/api/backend${path}`, { method: "POST", body: form });
+export async function apiUpload<T>(path: string, form: FormData, options: { signal?: AbortSignal } = {}): Promise<T> {
+  const response = await fetch(`/api/backend${path}`, { method: "POST", body: form, signal: options.signal });
   if (!response.ok) throw new ApiError(await parseError(response), response.status);
   return response.json() as Promise<T>;
 }

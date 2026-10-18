@@ -36,6 +36,7 @@ export function Button({ children, className, variant = "primary", loading, ...p
     <button
       {...props}
       disabled={props.disabled || loading}
+      aria-busy={loading || undefined}
       className={clsx(
         "inline-flex items-center justify-center gap-2 rounded-sm border px-4 py-2 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-50",
         variant === "primary" && "border-gold bg-gold text-[#111820] hover:bg-[#e1b65d]",
@@ -44,7 +45,7 @@ export function Button({ children, className, variant = "primary", loading, ...p
         className
       )}
     >
-      {loading && <LoaderCircle size={15} className="animate-spin" />}
+      {loading && <LoaderCircle size={15} className="animate-spin" aria-hidden="true" />}
       {children}
     </button>
   );
@@ -80,7 +81,7 @@ export function TextArea({ label, ...props }: TextareaHTMLAttributes<HTMLTextAre
 
 export function Notice({ children, kind = "info" }: { children: ReactNode; kind?: "info" | "warning" | "error" | "success" }) {
   return (
-    <div className={clsx(
+    <div role={kind === "error" ? "alert" : "status"} className={clsx(
       "border-l-2 px-4 py-3 text-sm",
       kind === "info" && "border-teal bg-teal/5 text-slate-300",
       kind === "warning" && "border-gold bg-gold/5 text-amber-100",

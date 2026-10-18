@@ -51,7 +51,8 @@ export const defaultDCF: DCFInputs = {
 
 export function createDemoWorkspace(): Workspace {
   return {
-    version: 1,
+    version: 2,
+    revision: 0,
     company: {
       id: 1,
       name: "Northstar Components (Synthetic)",
@@ -73,8 +74,10 @@ export function createDemoWorkspace(): Workspace {
     documents: [],
     dcfInputs: structuredClone(defaultDCF),
     dcfResult: null,
+    dcfInputHash: null,
     comparables: [],
     agentRuns: {},
+    claimAssessments: [],
     chats: [],
     experiments: [],
     settings: { mode: "Manual AI Mode", persistDocumentText: false }

@@ -34,10 +34,42 @@ def validate_dcf(inputs: DCFInputs) -> list[str]:
         errors.append("WACC must exceed terminal growth for the Gordon growth model.")
     if inputs.wacc <= -1:
         errors.append("WACC must be greater than -100%.")
+    if inputs.terminal_growth <= -1:
+        errors.append("Terminal growth must be greater than -100%.")
     if inputs.diluted_shares is not None and inputs.diluted_shares <= 0:
         errors.append("Diluted shares must be positive when supplied.")
-    if not math.isfinite(inputs.base_revenue):
-        errors.append("Base revenue must be finite.")
+    scalar_values = {
+        "Base revenue": inputs.base_revenue,
+        "WACC": inputs.wacc,
+        "Terminal growth": inputs.terminal_growth,
+        "Cash": inputs.cash,
+        "Debt": inputs.debt,
+        "Minority interest": inputs.minority_interest,
+        "Non-operating assets": inputs.non_operating_assets,
+    }
+    if inputs.diluted_shares is not None:
+        scalar_values["Diluted shares"] = inputs.diluted_shares
+    if inputs.reference_price is not None:
+        scalar_values["Reference price"] = inputs.reference_price
+    for label, value in scalar_values.items():
+        if not math.isfinite(value):
+            errors.append(f"{label} must be finite.")
+    assumptions = [
+        *inputs.revenue_growth, *inputs.ebit_margin, *inputs.tax_rate,
+        *inputs.depreciation_pct_revenue, *inputs.capex_pct_revenue, *inputs.nwc_pct_revenue,
+    ]
+    if any(not math.isfinite(value) for value in assumptions):
+        errors.append("All annual assumptions must be finite.")
+    if any(abs(value) > 10 for value in assumptions) or abs(inputs.wacc) > 10 or abs(inputs.terminal_growth) > 10:
+        errors.append("Rate assumptions must be between -1000% and 1000%.")
+    if any(abs(value) > 1e100 for value in (inputs.base_revenue, inputs.cash, inputs.debt, inputs.minority_interest, inputs.non_operating_assets)):
+        errors.append("Monetary assumptions are too large to calculate safely.")
+    if any(value <= -1 for value in inputs.revenue_growth):
+        errors.append("Revenue growth must be greater than -100%.")
+    if any(value < 0 or value > 1 for value in inputs.tax_rate):
+        errors.append("Tax rates must be between 0% and 100%.")
+    if inputs.reference_price is not None and inputs.reference_price <= 0:
+        errors.append("Reference price must be positive when supplied.")
     return errors
 
 
@@ -77,6 +109,13 @@ def calculate_dcf(inputs: DCFInputs) -> DCFResult:
     equity_value = enterprise_value - inputs.debt + inputs.cash - inputs.minority_interest + inputs.non_operating_assets
     implied = equity_value / inputs.diluted_shares if inputs.diluted_shares is not None else None
     upside = implied / inputs.reference_price - 1 if implied is not None and inputs.reference_price not in {None, 0} else None
+    numeric_outputs = [terminal_value, pv_terminal_value, enterprise_value, equity_value]
+    if implied is not None:
+        numeric_outputs.append(implied)
+    if upside is not None:
+        numeric_outputs.append(upside)
+    if not np.isfinite(forecast.select_dtypes(include="number").to_numpy()).all() or not all(math.isfinite(value) for value in numeric_outputs):
+        raise ValueError("DCF assumptions produced non-finite results.")
     return DCFResult(forecast, enterprise_value, equity_value, implied, terminal_value, pv_terminal_value, upside)
 
 
@@ -96,7 +135,10 @@ def scenario_analysis(base: DCFInputs, changes: dict[str, dict[str, float]] | No
                 "terminal_growth": base.terminal_growth + delta.get("terminal_delta", 0),
             }
         )
-        results[name] = calculate_dcf(assumptions)
+        try:
+            results[name] = calculate_dcf(assumptions)
+        except ValueError as exc:
+            raise ValueError(f"{name} scenario is invalid: {exc}") from exc
     return results
 
 

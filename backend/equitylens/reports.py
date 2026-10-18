@@ -90,17 +90,46 @@ def generate_pdf(company: Any, thesis: dict[str, list[dict[str, str]]], valuatio
     return output.getvalue()
 
 
-def generate_excel(company: Any, figures: pd.DataFrame, assumptions: pd.DataFrame, forecast: pd.DataFrame, valuation: dict[str, Any] | None) -> bytes:
+def generate_excel(
+    company: Any,
+    figures: pd.DataFrame,
+    assumptions: pd.DataFrame,
+    forecast: pd.DataFrame,
+    valuation: dict[str, Any] | None,
+    claim_assessments: list[dict[str, Any]] | None = None,
+) -> bytes:
     output = BytesIO()
     with pd.ExcelWriter(output, engine="openpyxl") as writer:
-        pd.DataFrame({"Field": ["Company", "As of date", "Currency", "Synthetic"], "Value": [company.name, date.today().isoformat(), company.currency, company.is_synthetic]}).to_excel(writer, sheet_name="Overview", index=False)
-        figures.to_excel(writer, sheet_name="Historical Financials", index=False)
-        assumptions.to_excel(writer, sheet_name="DCF Assumptions", index=False)
-        forecast.to_excel(writer, sheet_name="DCF Forecast")
-        pd.DataFrame([valuation or {}]).to_excel(writer, sheet_name="Valuation Summary", index=False)
+        excel_safe_frame(pd.DataFrame({"Field": ["Company", "As of date", "Currency", "Synthetic"], "Value": [company.name, date.today().isoformat(), company.currency, company.is_synthetic]})).to_excel(writer, sheet_name="Overview", index=False)
+        excel_safe_frame(figures).to_excel(writer, sheet_name="Historical Financials", index=False)
+        excel_safe_frame(assumptions).to_excel(writer, sheet_name="DCF Assumptions", index=False)
+        excel_safe_frame(forecast).to_excel(writer, sheet_name="DCF Forecast")
+        excel_safe_frame(pd.DataFrame([valuation or {}])).to_excel(writer, sheet_name="Valuation Summary", index=False)
+        if claim_assessments:
+            claim_rows = [
+                {
+                    "claim_id": item.get("claim_id"),
+                    "claim": item.get("claim"),
+                    "status": item.get("status"),
+                    "rationale": item.get("rationale"),
+                    "human_review_required": item.get("human_review_required"),
+                    "calculation_value": item.get("calculation_value"),
+                    "checks": " | ".join(item.get("checks", [])),
+                    "citations": " | ".join(
+                        f"[{citation.get('source_id')}] {citation.get('document_name')}, page {citation.get('page')}: {citation.get('excerpt')}"
+                        for citation in item.get("citations", [])
+                    ),
+                }
+                for item in claim_assessments
+            ]
+            excel_safe_frame(pd.DataFrame(claim_rows)).to_excel(writer, sheet_name="Evidence Review", index=False)
         for sheet in writer.book.worksheets:
             for cell in sheet[1]:
                 cell.font = Font(bold=True, color="FFFFFF")
                 cell.fill = PatternFill("solid", fgColor="183B4E")
             sheet.freeze_panes = "A2"
     return output.getvalue()
+
+
+def excel_safe_frame(frame: pd.DataFrame) -> pd.DataFrame:
+    return frame.map(lambda value: f"'{value}" if isinstance(value, str) and value.startswith(("=", "+", "-", "@")) else value)

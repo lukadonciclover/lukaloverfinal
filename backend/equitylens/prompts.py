@@ -6,7 +6,16 @@ from typing import Any
 
 from pydantic import BaseModel
 
-from equitylens.models import CriticResult, FinancialAnalystResult, RiskAnalystResult, ValuationAnalystResult
+from equitylens.models import (
+    CriticResult,
+    EvidenceVerificationResult,
+    FinancialAnalystResult,
+    RiskAnalystResult,
+    ValuationAnalystResult,
+)
+
+AGENT_PROMPT_VERSION = "agent-v2.0"
+BENCHMARK_VERSION = "benchmarks-v2.0"
 
 
 AGENT_SCHEMAS: dict[str, type[BaseModel]] = {
@@ -14,6 +23,7 @@ AGENT_SCHEMAS: dict[str, type[BaseModel]] = {
     "Valuation Analyst": ValuationAnalystResult,
     "Risk Analyst": RiskAnalystResult,
     "Investment Committee Critic": CriticResult,
+    "Evidence Verification Agent": EvidenceVerificationResult,
 }
 
 AGENT_ROLES = {
@@ -21,6 +31,7 @@ AGENT_ROLES = {
     "Valuation Analyst": """You are a valuation analyst reviewing calculations made by a Python engine. Do not calculate or alter any number. Explain sensitivity to growth, margins, capex, working capital, WACC, terminal growth, and exit assumptions. Flag optimistic or inconsistent assumptions. Label scenario proposals as assumptions.""",
     "Risk Analyst": """You are an independent investment risk analyst. Rank risks with low/medium/high likelihood and impact. Explain financial transmission. Explicitly distinguish evidence-backed risks from hypotheses that require investigation. Do not manufacture evidence.""",
     "Investment Committee Critic": """You are a skeptical investment committee member. Challenge prior conclusions, contradictions, unsupported claims, missing evidence, and optimistic valuation assumptions. Do not simply agree and do not invent opposing evidence. Recommend Buy, Hold, Sell, or Insufficient Evidence based only on supplied material.""",
+    "Evidence Verification Agent": """You are an evidence verification reviewer. Break prior agent output into atomic factual claims. For every claim, cite only the supplied source ID, document, page, and an exact excerpt, or reference a named deterministic calculation. Classify semantic support as verified, partially_supported, unsupported, or contradicted. Absence of evidence is unsupported, never contradicted. Your classifications will be checked deterministically and may be downgraded.""",
 }
 
 AGENT_TASKS = {
@@ -28,6 +39,7 @@ AGENT_TASKS = {
     "Valuation Analyst": "Review the valuation assumptions and deterministic model outputs. Explain key drivers and inconsistencies.",
     "Risk Analyst": "Identify and rank competitive, financial, concentration, supplier, capital intensity, regulatory, valuation, liquidity, and governance risks where supported.",
     "Investment Committee Critic": "Critique the prior agent work and valuation, then give an independent recommendation.",
+    "Evidence Verification Agent": "Audit factual claims from all prior agents against exact source excerpts and deterministic calculation outputs.",
 }
 
 STRATEGIES = [
@@ -51,7 +63,8 @@ def evidence_text(chunks: list[dict[str, Any]]) -> str:
     for chunk in chunks:
         name = chunk.get("document_name", "Unknown document")
         page = chunk.get("page")
-        sections.append(f"[Source: {name}, page {page}]\n{chunk['text']}")
+        source_id = chunk.get("chunk_id", "missing-source-id")
+        sections.append(f"[Source ID: {source_id}; {name}, page {page}]\n{chunk['text']}")
     return "\n\n".join(sections)
 
 
@@ -61,6 +74,7 @@ def build_agent_prompt(
     verified_financials: dict[str, Any],
     valuation_results: dict[str, Any] | None = None,
     prior_outputs: dict[str, Any] | None = None,
+    assumptions: dict[str, Any] | None = None,
 ) -> str:
     schema = AGENT_SCHEMAS[agent_name].model_json_schema()
     return f"""SYSTEM ROLE
@@ -75,7 +89,7 @@ SECURITY AND EVIDENCE RULES
 TASK
 {AGENT_TASKS[agent_name]}
 
-VERIFIED FINANCIAL DATA
+FINANCIAL DATA WITH ORIGINS (only source-linked or deterministic rows are verified)
 {json.dumps(verified_financials, indent=2, default=str)}
 
 DETERMINISTIC VALUATION OUTPUT
@@ -83,6 +97,9 @@ DETERMINISTIC VALUATION OUTPUT
 
 PRIOR VALIDATED AGENT OUTPUTS
 {json.dumps(prior_outputs or {}, indent=2, default=str)}
+
+CURRENT ASSUMPTIONS AND PROVENANCE
+{json.dumps(assumptions or {}, indent=2, default=str)}
 
 EVIDENCE
 {evidence_text(evidence)}
@@ -115,19 +132,28 @@ def build_strategy_prompt(strategy: str, task: str, context: str, schema: dict[s
 def known_answer_tasks() -> dict[str, dict[str, Any]]:
     return {
         "Calculate revenue growth": {
-            "context": "Synthetic data: prior-year revenue was 100 and current-year revenue was 120.",
-            "expected_numbers": [0.2, 20.0],
+            "version": BENCHMARK_VERSION,
+            "context": "[Source ID: benchmark-revenue] Synthetic data: prior-year revenue was 100 and current-year revenue was 120.",
+            "expected_values": [{"name": "revenue growth", "accepted": [0.2, 20.0], "labels": ["growth", "increase"]}],
+            "allowed_numbers": [0.2, 100.0, 120.0, 20.0],
             "required_terms": ["20"],
+            "required_source_ids": ["benchmark-revenue"],
         },
         "Assess unsupported cause": {
-            "context": "Synthetic data: revenue rose from 100 to 120. No management explanation is provided.",
-            "expected_numbers": [0.2, 20.0],
+            "version": BENCHMARK_VERSION,
+            "context": "[Source ID: benchmark-revenue] Synthetic data: revenue rose from 100 to 120. No management explanation is provided.",
+            "expected_values": [{"name": "revenue growth", "accepted": [20.0], "labels": ["growth", "increase", "rose"]}],
+            "allowed_numbers": [100.0, 120.0, 20.0],
             "required_terms": ["not", "evidence"],
+            "required_source_ids": ["benchmark-revenue"],
         },
         "Calculate free cash flow": {
-            "context": "Synthetic data: operating cash flow was 75 and capital expenditure was 30.",
-            "expected_numbers": [45.0],
+            "version": BENCHMARK_VERSION,
+            "context": "[Source ID: benchmark-cash-flow] Synthetic data: operating cash flow was 75 and capital expenditure was 30.",
+            "expected_values": [{"name": "free cash flow", "accepted": [45.0], "labels": ["free cash flow", "fcf"]}],
+            "allowed_numbers": [75.0, 30.0, 45.0],
             "required_terms": ["45"],
+            "required_source_ids": ["benchmark-cash-flow"],
         },
     }
 
@@ -136,11 +162,11 @@ def evaluate_output(output: str, task_spec: dict[str, Any], require_json: bool =
     lowered = output.lower()
     required = task_spec.get("required_terms", [])
     term_score = sum(term.lower() in lowered for term in required) / max(len(required), 1)
-    json_valid = None
+    json_valid: bool | None = None
     if require_json:
         try:
-            json.loads(output)
-            json_valid = True
+            parsed = json.loads(output)
+            json_valid = isinstance(parsed, dict) and bool(parsed)
         except json.JSONDecodeError:
             json_valid = False
     observed_numbers = []
@@ -149,12 +175,38 @@ def evaluate_output(output: str, task_spec: dict[str, Any], require_json: bool =
             observed_numbers.append(float(match))
         except ValueError:
             pass
-    expected = task_spec.get("expected_numbers", [])
-    numeric_score = float(any(any(abs(actual - target) <= max(0.001, abs(target) * 0.001) for actual in observed_numbers) for target in expected)) if expected else None
+    sentences = re.split(r"(?<=[.!?])\s+|\n+", lowered)
+    expected_values = task_spec.get("expected_values", [])
+    matched_values = 0
+    for expectation in expected_values:
+        labels = [str(label).lower() for label in expectation.get("labels", [])]
+        accepted = [float(value) for value in expectation.get("accepted", [])]
+        matching_sentences = [sentence for sentence in sentences if any(label in sentence for label in labels)]
+        if any(
+            any(abs(float(number) - target) <= max(0.001, abs(target) * 0.001) for target in accepted)
+            for sentence in matching_sentences
+            for number in re.findall(r"-?\d+(?:\.\d+)?", sentence.replace(",", ""))
+        ):
+            matched_values += 1
+    numeric_score = matched_values / len(expected_values) if expected_values else None
+    allowed = [float(value) for value in task_spec.get("allowed_numbers", [])]
+    hallucinated_numbers = [number for number in observed_numbers if not any(abs(number - target) <= max(0.001, abs(target) * 0.001) for target in allowed)]
+    required_sources = task_spec.get("required_source_ids", [])
+    cited_sources = re.findall(r"(?:source(?:\s+id)?\s*[:#]?\s*)([a-z0-9][a-z0-9-]+)", lowered)
+    evidence_accuracy = sum(source.lower() in cited_sources for source in required_sources) / max(len(required_sources), 1) if required_sources else None
+    instruction_compliance = bool(output.strip()) and term_score == 1 and json_valid is not False
+    checks = [score for score in (numeric_score, term_score, evidence_accuracy) if score is not None]
     return {
         "automated_term_accuracy": term_score,
         "known_number_match": numeric_score,
+        "numerical_accuracy": numeric_score,
+        "evidence_accuracy": evidence_accuracy,
         "structured_output_valid": json_valid,
-        "instruction_compliance": bool(output.strip()) and (json_valid is not False),
+        "instruction_compliance": instruction_compliance,
+        "completeness": sum(checks) / len(checks) if checks else 0.0,
+        "hallucinated_numbers": hallucinated_numbers,
+        "required_source_ids": required_sources,
+        "cited_source_ids": cited_sources,
+        "benchmark_version": task_spec.get("version", BENCHMARK_VERSION),
         "human_assessment_required": "Interpretive quality and citation entailment require human review.",
     }

@@ -7,7 +7,6 @@ from typing import Any
 
 import pandas as pd
 
-
 FORMULAS = {
     "Revenue growth": "(Current revenue / Prior revenue) - 1",
     "Revenue CAGR": "(Ending revenue / Beginning revenue)^(1 / years) - 1",
@@ -57,7 +56,8 @@ def calculate_period_metrics(current: dict[str, float | None], prior: dict[str, 
     debt = add_if_complete(current.get("short_term_debt"), current.get("long_term_debt"))
     liquidity = add_if_complete(current.get("cash"), current.get("short_term_investments"))
     net_debt = subtract_if_complete(debt, liquidity)
-    fcf = subtract_if_complete(current.get("operating_cash_flow"), current.get("capital_expenditure"))
+    capex = current.get("capital_expenditure")
+    fcf = subtract_if_complete(current.get("operating_cash_flow"), abs(capex) if capex is not None else None)
     return {
         "revenue_growth": growth(revenue, prior.get("revenue")),
         "gross_margin": safe_divide(current.get("gross_profit"), revenue),
@@ -95,11 +95,15 @@ def figures_to_frame(figures: Sequence[Any]) -> pd.DataFrame:
 
 def periods_to_metrics(figures: Sequence[Any]) -> dict[str, dict[str, float | None]]:
     result: dict[str, dict[str, float | None]] = {}
+    scales = [float(figure.unit_scale if hasattr(figure, "unit_scale") else figure.get("unit_scale", 1)) for figure in figures]
+    target_scale = max(scales, default=1.0)
     for figure in figures:
         period = figure.period if hasattr(figure, "period") else figure["period"]
         metric = figure.metric if hasattr(figure, "metric") else figure["metric"]
         value = figure.value if hasattr(figure, "value") else figure.get("value")
-        result.setdefault(str(period), {})[str(metric)] = value
+        scale = float(figure.unit_scale if hasattr(figure, "unit_scale") else figure.get("unit_scale", 1))
+        normalized = value * scale / target_scale if value is not None else None
+        result.setdefault(str(period), {})[str(metric)] = normalized
     return result
 
 
@@ -119,10 +123,17 @@ def data_quality_issues(figures: Sequence[Any]) -> list[str]:
     currencies = {str(figure.currency if hasattr(figure, "currency") else figure.get("currency")) for figure in figures}
     if len(currencies) > 1:
         issues.append("Currency mismatch: " + ", ".join(sorted(currencies)))
+    scales = {float(figure.unit_scale if hasattr(figure, "unit_scale") else figure.get("unit_scale", 1)) for figure in figures}
+    if len(scales) > 1:
+        issues.append("Mixed unit scales were normalized before calculation: " + ", ".join(f"{scale:g}" for scale in sorted(scales)))
     periods = {str(figure.period if hasattr(figure, "period") else figure.get("period")) for figure in figures}
     invalid = sorted(period for period in periods if not re.fullmatch(r"(?:19|20)\d{2}(?:-Q[1-4])?", period))
     if invalid:
         issues.append("Unrecognized financial periods: " + ", ".join(invalid))
+    has_annual = any(re.fullmatch(r"(?:19|20)\d{2}", period) for period in periods)
+    has_quarterly = any(re.fullmatch(r"(?:19|20)\d{2}-Q[1-4]", period) for period in periods)
+    if has_annual and has_quarterly:
+        issues.append("Annual and quarterly periods cannot be compared in one growth series.")
     keys: set[tuple[str, str]] = set()
     for figure in figures:
         metric = str(figure.metric if hasattr(figure, "metric") else figure.get("metric"))
@@ -130,4 +141,7 @@ def data_quality_issues(figures: Sequence[Any]) -> list[str]:
         if (metric, period) in keys:
             issues.append(f"Duplicate figure for {metric} in {period}.")
         keys.add((metric, period))
+        value = figure.value if hasattr(figure, "value") else figure.get("value")
+        if metric == "capital_expenditure" and value is not None and value < 0:
+            issues.append(f"Capital expenditure in {period} was normalized to a positive cash outflow.")
     return issues

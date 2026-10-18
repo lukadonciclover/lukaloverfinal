@@ -8,7 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class AIMode(str, Enum):
-    LOCAL = "Local AI Mode"
+    CONFIGURED = "Configured External Inference"
     MANUAL = "Manual AI Mode"
     ANALYTICS = "Financial Analytics Only"
 
@@ -54,30 +54,34 @@ class DocumentRecord(BaseModel):
 
 
 class SourceRef(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     document_id: int | None = None
+    document_identifier: str = ""
     document_name: str
     page: int | None = None
     quote: str = ""
     reporting_period: str = ""
     currency: str = ""
-    unit_scale: float = 1.0
+    unit_scale: float = Field(default=1.0, gt=0)
     confidence: float = Field(default=0.5, ge=0, le=1)
 
 
 class FinancialFigure(BaseModel):
+    model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
     id: int | None = None
     company_id: int
     metric: str
     period: str
     value: float | None = None
     currency: str = "USD"
-    unit_scale: float = 1.0
+    unit_scale: float = Field(default=1.0, gt=0)
     origin: ValueOrigin = ValueOrigin.USER
     source: SourceRef | None = None
     notes: str = ""
 
 
 class Finding(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     finding: str
     supporting_figures: list[str] = Field(default_factory=list)
     sources: list[str] = Field(default_factory=list)
@@ -102,6 +106,7 @@ class ValuationAnalystResult(BaseModel):
 
 
 class RiskItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     risk: str
     evidence: str
     likelihood: Literal["low", "medium", "high"]
@@ -128,6 +133,31 @@ class CriticResult(BaseModel):
     confidence: Literal["low", "medium", "high"]
 
 
+class CitationLocator(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    source_id: str
+    document_name: str
+    page: int | None = None
+    excerpt: str
+
+
+class ProposedClaimAssessment(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    claim_id: str
+    claim: str
+    status: Literal["verified", "partially_supported", "unsupported", "contradicted"]
+    citations: list[CitationLocator] = Field(default_factory=list)
+    calculation_ref: str | None = None
+    claimed_value: float | None = None
+    rationale: str
+
+
+class EvidenceVerificationResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    assessments: list[ProposedClaimAssessment]
+    unresolved_questions: list[str] = Field(default_factory=list)
+
+
 class ChatAnswer(BaseModel):
     model_config = ConfigDict(extra="forbid")
     answer: str
@@ -137,13 +167,14 @@ class ChatAnswer(BaseModel):
 
 
 class DCFInputs(BaseModel):
+    model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
     base_revenue: float
-    revenue_growth: list[float]
-    ebit_margin: list[float]
-    tax_rate: list[float]
-    depreciation_pct_revenue: list[float]
-    capex_pct_revenue: list[float]
-    nwc_pct_revenue: list[float]
+    revenue_growth: list[float] = Field(min_length=1, max_length=20)
+    ebit_margin: list[float] = Field(min_length=1, max_length=20)
+    tax_rate: list[float] = Field(min_length=1, max_length=20)
+    depreciation_pct_revenue: list[float] = Field(min_length=1, max_length=20)
+    capex_pct_revenue: list[float] = Field(min_length=1, max_length=20)
+    nwc_pct_revenue: list[float] = Field(min_length=1, max_length=20)
     wacc: float
     terminal_growth: float
     cash: float = 0.0

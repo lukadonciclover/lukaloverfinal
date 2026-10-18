@@ -3,7 +3,6 @@ from __future__ import annotations
 from datetime import date
 from typing import Any
 
-
 SECTIONS = [
     "Investment overview", "Company description", "Industry position", "Historical financial performance",
     "Revenue growth opportunities", "Margin expansion opportunities", "Valuation", "Catalysts", "Downside risks",
@@ -20,20 +19,20 @@ def generate_deterministic_thesis(
     """Builds a transparent fallback thesis without pretending it came from an LLM."""
     result: dict[str, list[dict[str, str]]] = {section: [] for section in SECTIONS}
     result["Investment overview"].append(
-        {"classification": "Fact supported by source", "text": f"{company.name} is analyzed as of {date.today().isoformat()} in {company.currency}."}
+        {"classification": "Workspace metadata", "text": f"{company.name} is analyzed as of {date.today().isoformat()} in {company.currency}."}
     )
     if company.industry:
         result["Company description"].append(
-            {"classification": "Fact supported by source", "text": f"Workspace classification: {company.industry}, {company.country or 'country not supplied'}."}
+            {"classification": "Workspace metadata", "text": f"Workspace classification: {company.industry}, {company.country or 'country not supplied'}."}
         )
     if metrics:
-        latest_period = sorted(metrics)[-1]
+        latest_period = max(metrics)
         latest = metrics[latest_period]
         for label, key in (("Revenue", "revenue"), ("Net income", "net_income"), ("Operating cash flow", "operating_cash_flow")):
             value = latest.get(key)
             if value is not None:
                 result["Historical financial performance"].append(
-                    {"classification": "Fact supported by source", "text": f"{label} for {latest_period}: {value:,.2f} {company.currency}."}
+                    {"classification": "Financial ledger value; verify source, currency, and scale in ledger", "text": f"{label} for {latest_period}: {value:,.2f} in normalized ledger display units."}
                 )
     if valuation:
         equity = valuation.get("equity_value")
@@ -53,6 +52,6 @@ def generate_deterministic_thesis(
     )
     for risk in agent_outputs.get("Risk Analyst", {}).get("risks", []):
         result["Downside risks"].append(
-            {"classification": "Reasoned interpretation" if risk.get("evidence_backed") else "Analyst assumption", "text": risk.get("risk", "")}
+            {"classification": "Agent interpretation; check Evidence Verification", "text": risk.get("risk", "")}
         )
     return result

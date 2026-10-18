@@ -9,13 +9,12 @@ from io import BytesIO
 from pathlib import Path
 from typing import Any
 
-import pymupdf
 import pandas as pd
-
+import pymupdf
 
 TOKEN_RE = re.compile(r"[a-zA-Z0-9]+")
 PERIOD_RE = re.compile(r"\b(?:19|20)\d{2}\b")
-NUMBER_RE = re.compile(r"(?<!\w)(?:\$|€|£)?\(?-?\d[\d,]*(?:\.\d+)?\)?")
+NUMBER_RE = re.compile(r"(?<!\w)\(?(?:\$|€|£)?-?\d[\d,]*(?:\.\d+)?\)?")
 
 METRIC_ALIASES = {
     "revenue": ("revenue", "net sales", "total sales"),
@@ -50,7 +49,7 @@ class ExtractedDocument:
 
 
 def document_identifier(content: bytes) -> str:
-    return hashlib.sha256(content).hexdigest()[:20]
+    return hashlib.sha256(content).hexdigest()
 
 
 def classify_document(name: str, text: str = "") -> str:
@@ -160,6 +159,7 @@ def chunk_pages(pages: list[dict[str, Any]], chunk_size: int = 1400, overlap: in
         if not text.strip():
             continue
         start = 0
+        page_scale, page_unit = detect_unit_scale(text)
         while start < len(text):
             end = min(start + chunk_size, len(text))
             if end < len(text):
@@ -169,6 +169,8 @@ def chunk_pages(pages: list[dict[str, Any]], chunk_size: int = 1400, overlap: in
             section = text[start:end].strip()
             if section:
                 scale, unit = detect_unit_scale(section)
+                if scale == 1.0 and page_scale != 1.0:
+                    scale, unit = page_scale, page_unit
                 chunks.append(
                     {
                         "page": page["page"],
@@ -177,7 +179,7 @@ def chunk_pages(pages: list[dict[str, Any]], chunk_size: int = 1400, overlap: in
                             "reporting_period": detect_reporting_period(section),
                             "unit_scale": scale,
                             "unit_label": unit,
-                            "forward_looking": bool(re.search(r"\b(expect|forecast|guidance|outlook|anticipate)\b", section, re.I)),
+                            "forward_looking": bool(re.search(r"\b(expect|forecast|guidance|outlook|anticipate)\b", section, re.IGNORECASE)),
                         },
                     }
                 )
@@ -225,10 +227,13 @@ def suggest_financial_figures(pages: list[dict[str, Any]], currency: str = "USD"
         lines = page["text"].splitlines()
         for line in lines:
             normalized = line.lower()
-            metric = next(
-                (key for key, aliases in METRIC_ALIASES.items() if any(alias in normalized for alias in aliases)),
-                None,
-            )
+            matches = [
+                (len(alias), key)
+                for key, aliases in METRIC_ALIASES.items()
+                for alias in aliases
+                if alias in normalized
+            ]
+            metric = max(matches, default=(0, None))[1]
             if not metric:
                 continue
             values = NUMBER_RE.findall(line)
