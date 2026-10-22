@@ -8,12 +8,12 @@ import {
 import { vi } from "vitest";
 import { ModelsPage } from "@/components/pages/workbench";
 import { WorkspaceProvider, parseWorkspace } from "@/lib/workspace";
-import { createBlankWorkspace } from "@/lib/demo";
+import { createBlankWorkspace } from "@/lib/defaults";
 import { payloadFor, settingsFor } from "@/lib/workbench";
 import { apiPost } from "@/lib/api";
 
 vi.mock("@/lib/storage", () => ({
-  loadIndexedWorkspace: vi.fn().mockResolvedValue(null),
+  loadIndexedWorkspace: vi.fn().mockImplementation(async () => createBlankWorkspace("Test")),
   saveIndexedWorkspace: vi.fn(),
   deleteIndexedWorkspace: vi.fn(),
 }));

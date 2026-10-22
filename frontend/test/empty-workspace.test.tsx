@@ -1,0 +1,41 @@
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { vi } from "vitest";
+import { PageRouter } from "@/components/page-router";
+import { WorkspaceProvider } from "@/lib/workspace";
+import { createBlankWorkspace } from "@/lib/defaults";
+const storage = vi.hoisted(() => ({ load: vi.fn(), save: vi.fn(), push: vi.fn() }));
+vi.mock("@/lib/storage", () => ({ loadIndexedWorkspace: storage.load, saveIndexedWorkspace: storage.save, deleteIndexedWorkspace: vi.fn() }));
+vi.mock("next/navigation", () => ({ useRouter: () => ({ push: storage.push }) }));
+vi.mock("@/lib/api", () => ({ apiPost: vi.fn(), apiUpload: vi.fn(), apiDownload: vi.fn(), saveBlob: vi.fn() }));
+beforeEach(() => { localStorage.clear(); storage.load.mockResolvedValue(null); storage.save.mockReset().mockResolvedValue(undefined); });
+it("persists a genuinely empty portfolio and creates the first blank project", async () => {
+  render(<WorkspaceProvider><PageRouter section="dashboard" /></WorkspaceProvider>);
+  expect(await screen.findByText("No valuation projects yet.")).toBeInTheDocument();
+  await waitFor(() => expect(storage.save).toHaveBeenCalledWith({portfolio_version:1, active_project_id:"", projects:[]}));
+  fireEvent.click(screen.getByRole("button", {name:"Create Project"}));
+  fireEvent.change(screen.getByLabelText("Project name"), {target:{value:"My Company"}});
+  fireEvent.click(screen.getByRole("button", {name:"Create Project"}));
+  expect(await screen.findByText("My Company")).toBeInTheDocument();
+  expect(screen.getByText("No financial data available")).toBeInTheDocument();
+  await waitFor(() => expect(storage.save.mock.lastCall?.[0].projects).toHaveLength(1));
+  const workspace = storage.save.mock.lastCall?.[0].projects[0].workspace;
+  expect(workspace.figures).toEqual([]);
+  expect(workspace.dcfInputs.base_revenue).toBeNull();
+  expect(workspace.dcfResult).toBeNull();
+  expect(storage.push).toHaveBeenCalledWith("/workspace");
+});
+it("loads an empty saved portfolio", async () => {
+  storage.load.mockResolvedValue({portfolio_version:1, active_project_id:"", projects:[]});
+  render(<WorkspaceProvider><PageRouter section="valuation" /></WorkspaceProvider>);
+  expect(await screen.findByText("No valuation projects yet.")).toBeInTheDocument();
+});
+it("preserves user projects whose names contain Northstar", async () => {
+  const workspace = createBlankWorkspace("Northstar User Project");
+  workspace.company.analyst_notes = "User-owned data";
+  workspace.figures = [{company_id:workspace.company.id, metric:"revenue", period:"2025", value:123, currency:"USD", unit_scale:1, origin:"reported", notes:""}];
+  storage.load.mockResolvedValue({portfolio_version:1, active_project_id:"saved", projects:[{id:"saved", name:workspace.company.name, archived:false, workspace}]});
+  render(<WorkspaceProvider><PageRouter section="dashboard" /></WorkspaceProvider>);
+  expect(await screen.findByText("Northstar User Project")).toBeInTheDocument();
+  await waitFor(() => expect(storage.save).toHaveBeenCalled());
+  expect(storage.save.mock.lastCall?.[0].projects[0].workspace.figures[0].value).toBe(123);
+});

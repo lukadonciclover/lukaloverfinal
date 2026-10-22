@@ -1,4 +1,4 @@
-import { createDemoWorkspace } from "@/lib/demo";
+import { createTestWorkspace } from "./fixtures";
 import { currentDcfResult, dcfFingerprint, fingerprint, valuationFingerprint } from "@/lib/fingerprint";
 import { parseWorkspace, persistenceCopy } from "@/lib/workspace";
 import type { AgentRun } from "@/lib/types";
@@ -15,7 +15,7 @@ function run(agent: string, inputHash: string, parentRunIds: Record<string, stri
 
 describe("workspace safety regressions", () => {
   it("removes source-bearing text when persistence consent is off", () => {
-    const workspace = createDemoWorkspace();
+    const workspace = createTestWorkspace();
     workspace.documents = [{
       identifier: "document-1", name: "Report", document_type: "Annual report", reporting_period: "2025",
       pages: 1, warning: "", extraction_status: "complete", retained_by_server: false,
@@ -37,7 +37,7 @@ describe("workspace safety regressions", () => {
   });
 
   it("migrates version-one workspaces and disables imported text retention", () => {
-    const legacy = createDemoWorkspace() as unknown as Record<string, unknown>;
+    const legacy = createTestWorkspace() as unknown as Record<string, unknown>;
     legacy.version = 1;
     legacy.settings = { mode: "Manual AI Mode", persistDocumentText: true };
 
@@ -49,7 +49,7 @@ describe("workspace safety regressions", () => {
   });
 
   it("rejects malformed financial imports", () => {
-    const malformed = createDemoWorkspace();
+    const malformed = createTestWorkspace();
     malformed.figures[0].unit_scale = 0;
     expect(() => parseWorkspace(malformed)).toThrow(/financial figure is malformed/i);
   });
@@ -57,7 +57,7 @@ describe("workspace safety regressions", () => {
 
 
   it("keeps a DCF stale after ledger changes until assumptions are reconciled", () => {
-    const workspace = createDemoWorkspace();
+    const workspace = createTestWorkspace();
     workspace.dcfResult = { forecast: [], enterprise_value: 1, equity_value: 1, implied_share_value: 1, terminal_value: 1, pv_terminal_value: 1, upside_downside: null, timing_convention: "test", scenarios: {}, sensitivity: { rows: [], columns: [], values: [] } };
     workspace.dcfInputHash = valuationFingerprint(workspace);
     workspace.dcfCalculationHash = dcfFingerprint(workspace.dcfInputs);

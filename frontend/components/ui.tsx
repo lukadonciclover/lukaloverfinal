@@ -8,13 +8,13 @@ export function Card({ children, className = "" }: { children: ReactNode; classN
   return <section className={clsx("panel p-4 sm:p-5", className)}>{children}</section>;
 }
 
-export function PageHeader({ kicker, title, description, actions }: { kicker: string; title: string; description: string; actions?: ReactNode }) {
+export function PageHeader({ title, description, actions }: { kicker?: string; title: string; description?: string; actions?: ReactNode }) {
   return (
-    <header className="mb-6 flex flex-col justify-between gap-4 border-b border-line pb-6 lg:flex-row lg:items-end">
+    <header className="mb-4 flex flex-col justify-between gap-4 border-b border-line pb-4 lg:flex-row lg:items-end">
       <div>
-        <p className="eyebrow mb-2">{kicker}</p>
-        <h1 className="text-3xl font-semibold tracking-tight text-white sm:text-4xl">{title}</h1>
-        <p className="mt-2 max-w-3xl text-sm leading-6 text-mist">{description}</p>
+
+        <h1 className="text-2xl font-semibold tracking-tight text-white">{title}</h1>
+        {description && <p className="mt-2 max-w-3xl text-sm leading-6 text-mist">{description}</p>}
       </div>
       {actions && <div className="flex flex-wrap gap-2">{actions}</div>}
     </header>

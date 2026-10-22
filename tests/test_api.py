@@ -28,11 +28,10 @@ def dcf_payload():
     }
 
 
-def test_health_demo_and_dcf_endpoints():
+def test_health_and_dcf_endpoints():
     assert client.get("/health").json()["calculation_engine"] == "deterministic"
     demo = client.get("/v1/demo")
-    assert demo.status_code == 200
-    assert demo.json()["company"]["is_synthetic"] is True
+    assert demo.status_code == 404
     response = client.post("/v1/valuation/dcf", json=dcf_payload())
     assert response.status_code == 200
     assert math.isclose(response.json()["equity_value"], 90)

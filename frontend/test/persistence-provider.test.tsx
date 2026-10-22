@@ -1,6 +1,6 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import { vi } from "vitest";
-import { createDemoWorkspace } from "@/lib/demo";
+import { createTestWorkspace } from "./fixtures";
 
 const storage = vi.hoisted(() => ({ load: vi.fn(), save: vi.fn() }));
 
@@ -10,16 +10,16 @@ vi.mock("@/lib/storage", () => ({
   deleteIndexedWorkspace: vi.fn()
 }));
 
-import { useWorkspace, WorkspaceProvider } from "@/lib/workspace";
+import { useProjectPortfolio, WorkspaceProvider } from "@/lib/workspace";
 
 function PersistenceProbe() {
-  const { persistenceMessage } = useWorkspace();
+  const { persistenceMessage } = useProjectPortfolio();
   return <p>{persistenceMessage}</p>;
 }
 
 describe("workspace hydration failure", () => {
   it("preserves malformed saved data instead of overwriting it with demo state", async () => {
-    const malformed = createDemoWorkspace();
+    const malformed = createTestWorkspace();
     malformed.figures[0].unit_scale = 0;
     storage.load.mockResolvedValue(malformed);
     storage.save.mockResolvedValue(undefined);

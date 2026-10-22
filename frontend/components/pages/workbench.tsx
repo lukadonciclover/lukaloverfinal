@@ -164,11 +164,10 @@ export function ValuationDashboard() {
     <>
       <PageHeader
         kicker="Equity Lens"
-        title="Financial valuation workbench"
-        description="Reviewed financial statements. Transparent forecasts. Auditable valuations."
+        title="Dashboard"
         actions={
           <Button onClick={() => createProject("Untitled valuation")}>
-            Create valuation project
+            Create Project
           </Button>
         }
       />
@@ -184,49 +183,9 @@ export function ValuationDashboard() {
           </Card>
         ))}
       </div>
-      {workspace.company.is_synthetic && (
-        <Notice kind="info">
-          Synthetic demonstration data. Create a new project for your company.
-        </Notice>
-      )}
-      <div className="mt-6 grid gap-4 md:grid-cols-2">
-        {[
-          [
-            "workspace",
-            "Financial Data",
-            "Upload and review financial statements.",
-          ],
-          [
-            "financials",
-            "Financial Analysis",
-            "Analyze growth, margins and cash flow.",
-          ],
-          [
-            "forecasting",
-            "Forecasting",
-            "Build 3, 5 or 10 years of integrated statements.",
-          ],
-          [
-            "valuation",
-            "Valuation Models",
-            "Choose DCF, comparables, transactions, dividends or assets.",
-          ],
-          [
-            "report",
-            "Results & Export",
-            "Compare valuations and export the model.",
-          ],
-        ].map(([href, title, text], i) => (
-          <Link
-            key={href}
-            href={`/${href}`}
-            className="border border-line bg-panel p-6 hover:border-gold"
-          >
-            <p className="text-xs text-gold">0{i + 1}</p>
-            <h2 className="mt-2 text-xl">{title}</h2>
-            <p className="mt-2 text-sm text-mist">{text}</p>
-          </Link>
-        ))}
+      {!workspace.figures.length && <p className="my-4 text-sm text-mist">No financial data available</p>}
+      <div className="mt-4 flex flex-wrap gap-3">
+        {[["workspace", "Financial Data"], ["financials", "Financial Analysis"], ["forecasting", "Forecasting"], ["valuation", "Valuation Models"], ["report", "Results & Export"]].map(([href, title]) => <Link key={href} href={`/${href}`} className="border border-line px-4 py-2 text-sm hover:border-gold">{title}</Link>)}
       </div>
       <p className="mt-5 text-sm text-mist">
         {projects.length} browser-local projects. Export a project backup to
@@ -241,7 +200,7 @@ export function ForecastingPage() {
     <>
       <PageHeader
         kicker="Forecasting"
-        title="Build the operating forecast"
+        title="Forecasting"
         description="Rates are decimals (0.05 = 5%). Monetary inputs and outputs use actual currency units."
       />
       <Card>
@@ -533,7 +492,7 @@ export function ModelsPage() {
     <>
       <PageHeader
         kicker="Valuation models"
-        title="Choose a method. Define the assumptions."
+        title="Valuation Models"
         description="Independent models. Money in actual currency units; diluted shares in actual shares. Rates are decimals."
       />
       <Card>
@@ -673,13 +632,13 @@ export function ModelsPage() {
                 <Field
                   label="Base revenue (actual units)"
                   type="number"
-                  value={workspace.dcfInputs.base_revenue}
+                  value={workspace.dcfInputs.base_revenue ?? ""}
                   onChange={(e) =>
                     updateWorkspace((w) => ({
                       ...w,
                       dcfInputs: {
                         ...w.dcfInputs,
-                        base_revenue: Number(e.target.value),
+                        base_revenue: e.target.value === "" ? null : Number(e.target.value),
                       },
                     }))
                   }
@@ -696,7 +655,7 @@ export function ModelsPage() {
                         for (const k of annual)
                           d[k] = Array.from(
                             { length: n },
-                            (_, i) => d[k][i] ?? d[k].at(-1) ?? 0,
+                            (_, i) => i < d[k].length ? d[k][i] : d[k].at(-1) ?? null,
                           );
                         return { ...w, dcfInputs: d };
                       });
@@ -728,14 +687,14 @@ export function ModelsPage() {
                                 className="field w-28"
                                 type="number"
                                 step="any"
-                                value={workspace.dcfInputs[k][i]}
+                                value={workspace.dcfInputs[k][i] ?? ""}
                                 onChange={(e) =>
                                   updateWorkspace((w) => ({
                                     ...w,
                                     dcfInputs: {
                                       ...w.dcfInputs,
                                       [k]: w.dcfInputs[k].map((v, n) =>
-                                        n === i ? Number(e.target.value) : v,
+                                        n === i ? (e.target.value === "" ? null : Number(e.target.value)) : v,
                                       ),
                                     },
                                   }))
@@ -945,7 +904,7 @@ export function ResultsPage() {
     <>
       <PageHeader
         kicker="Results & export"
-        title="Review the valuation"
+        title="Results & Export"
         description="Only current, valid calculations are displayed. Incomplete models are marked in exports."
         actions={
           <Button

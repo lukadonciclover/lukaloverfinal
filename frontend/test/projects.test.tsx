@@ -1,21 +1,21 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { useState } from "react";
 import { vi } from "vitest";
-import { createDemoWorkspace } from "@/lib/demo";
+import { createTestWorkspace } from "./fixtures";
 
 const storage = vi.hoisted(() => ({ load: vi.fn(), save: vi.fn(), remove: vi.fn() }));
 vi.mock("@/lib/storage", () => ({ loadIndexedWorkspace: storage.load, saveIndexedWorkspace: storage.save, deleteIndexedWorkspace: storage.remove }));
 
-import { useWorkspace, WorkspaceProvider } from "@/lib/workspace";
+import { useProjectPortfolio, WorkspaceProvider } from "@/lib/workspace";
 
-let capturedUpdate: ReturnType<typeof useWorkspace>["updateWorkspace"] | null = null;
+let capturedUpdate: ReturnType<typeof useProjectPortfolio>["updateWorkspace"] | null = null;
 
 function ProjectHarness() {
-  const context = useWorkspace();
+  const context = useProjectPortfolio();
   const [message, setMessage] = useState("");
   return <div>
-    <p>Active: {context.project.name}</p>
-    <p>Notes: {context.workspace.company.analyst_notes || "none"}</p>
+    <p>Active: {context.project?.name ?? "none"}</p>
+    <p>Notes: {context.workspace?.company.analyst_notes || "none"}</p>
     <p>Projects: {context.projects.length}</p>
     <p>Archived: {context.projects.filter((project) => project.archived).length}</p>
     <button onClick={() => context.createProject("Alpha")}>Create Alpha</button>
@@ -45,7 +45,7 @@ describe("multi-project portfolio", () => {
     render(<WorkspaceProvider><ProjectHarness /></WorkspaceProvider>);
     expect(screen.getByText("Loading browser projects...")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Create Alpha" })).not.toBeInTheDocument();
-    await act(async () => resolveLoad(createDemoWorkspace()));
+    await act(async () => resolveLoad(createTestWorkspace()));
     expect(await screen.findByRole("button", { name: "Create Alpha" })).toBeInTheDocument();
   });
 
@@ -67,12 +67,12 @@ describe("multi-project portfolio", () => {
     render(<WorkspaceProvider><ProjectHarness /></WorkspaceProvider>);
     fireEvent.click(await screen.findByRole("button", { name: "Create Alpha" }));
     fireEvent.click(screen.getByRole("button", { name: "Duplicate" }));
-    expect(screen.getByText("Projects: 3")).toBeInTheDocument();
+    expect(screen.getByText("Projects: 2")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Archive" }));
     expect(screen.getByText("Archived: 1")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Inspect export" }));
     expect(screen.getByText("Project export")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Round-trip import" }));
-    expect(screen.getByText("Projects: 4")).toBeInTheDocument();
+    expect(screen.getByText("Projects: 3")).toBeInTheDocument();
   });
 });

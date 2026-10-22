@@ -5,7 +5,6 @@ import { FinancialsPage } from "./financials";
 import { useRef, useState } from "react";
 import { Archive, Copy, FileSpreadsheet, FileText, FolderPlus, Pencil, Trash2, UploadCloud } from "lucide-react";
 import { apiUpload } from "@/lib/api";
-import { defaultDCF } from "@/lib/demo";
 import type { DocumentRecord } from "@/lib/types";
 import { useWorkspace } from "@/lib/workspace";
 import { Button, Card, Field, Notice, PageHeader, TextArea } from "@/components/ui";
@@ -20,12 +19,7 @@ export function WorkspacePage() {
   const inputRef = useRef<HTMLInputElement>(null);
   const company = workspace.company;
   const updateCompany = (field: string, value: string | number | null) => updateWorkspace((current) => {
-    const replacingSyntheticIdentity = current.company.is_synthetic && (field === "name" || field === "ticker") && value !== current.company[field as "name" | "ticker"];
-    return {
-      ...current,
-      company: { ...current.company, [field]: value, ...(replacingSyntheticIdentity ? { is_synthetic: false } : {}) },
-      ...(replacingSyntheticIdentity ? { valuationWorkbench: undefined, figures: [], documents: [], dcfInputs: { ...structuredClone(defaultDCF), base_revenue: 0, cash: 0, debt: 0, diluted_shares: null, reference_price: null }, dcfResult: null, dcfInputHash: null, dcfCalculationHash: null, agentRuns: {}, claimAssessments: [], chats: [], financialAnalysis: null, thesis: null, reportSnapshot: null } : {})
-    };
+    return { ...current, company: { ...current.company, [field]: value } };
   });
 
   async function upload(files: FileList | null) {
@@ -58,7 +52,7 @@ export function WorkspacePage() {
 
   return (
     <>
-      <PageHeader kicker="Financial data" title="Financial data & projects." description="Company metadata, source documents, reporting units, and analyst context remain attached to this browser workspace." />
+      <PageHeader title="Financial Data" />
       <Card className="mb-5"><div className="flex flex-wrap items-center justify-between gap-4"><div><p className="eyebrow">Project management</p><h2 className="mt-1 text-xl font-semibold">{project.name}</h2><p className="mt-1 text-xs text-mist">{projects.filter((item) => !item.archived).length} active · {projects.filter((item) => item.archived).length} archived · isolated browser-local projects</p></div><div className="flex flex-wrap gap-2"><Button variant="secondary" onClick={() => { const name = window.prompt("New project name", "Untitled company")?.trim(); if (name) createProject(name); }}><FolderPlus size={14}/> Create</Button><Button variant="secondary" onClick={() => { const name = window.prompt("Rename project", project.name)?.trim(); if (name) renameProject(project.id, name); }}><Pencil size={14}/> Rename</Button><Button variant="secondary" onClick={() => duplicateProject(project.id)}><Copy size={14}/> Duplicate</Button><Button variant="danger" disabled={projects.filter((item) => !item.archived).length <= 1} onClick={() => { if (window.confirm(`Archive ${project.name}? Its data remains stored and can be restored here.`)) archiveProject(project.id); }}><Archive size={14}/> Archive</Button></div></div>{projects.some((item) => item.archived) && <div className="mt-4 border-t border-line pt-3"><p className="text-xs font-semibold uppercase tracking-wider text-mist">Archived projects</p><div className="mt-2 flex flex-wrap gap-2">{projects.filter((item) => item.archived).map((item) => <button key={item.id} onClick={() => restoreProject(item.id)} className="border border-line px-3 py-2 text-xs text-mist hover:text-white">Restore {item.name}</button>)}</div></div>}</Card>
       <div className="grid gap-5 xl:grid-cols-[1.15fr_0.85fr]">
         <Card>

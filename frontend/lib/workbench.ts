@@ -2,18 +2,18 @@ import type { Workspace } from "./types";
 
 export interface ForecastSettings {
   horizon: 3 | 5 | 10;
-  growth: number;
-  gross_margin: number;
-  ebitda_margin: number;
+  growth: number | null;
+  gross_margin: number | null;
+  ebitda_margin: number | null;
   opex_ratio: number | null;
-  depreciation_ratio: number;
-  tax_rate: number;
-  capex_ratio: number;
-  nwc_ratio: number;
-  interest_rate: number;
-  net_borrowing: number;
-  dividends: number;
-  minimum_cash: number;
+  depreciation_ratio: number | null;
+  tax_rate: number | null;
+  capex_ratio: number | null;
+  nwc_ratio: number | null;
+  interest_rate: number | null;
+  net_borrowing: number | null;
+  dividends: number | null;
+  minimum_cash: number | null;
   financing: "revolver" | "none";
 }
 export interface PeerInput {
@@ -44,26 +44,26 @@ export interface WorkbenchSettings {
   };
   forecast: ForecastSettings;
   wacc: {
-    risk_free: number;
-    beta: number;
-    equity_risk_premium: number;
-    cost_of_debt: number;
-    tax_rate: number;
-    market_equity: number;
-    market_debt: number;
+    risk_free: number | null;
+    beta: number | null;
+    equity_risk_premium: number | null;
+    cost_of_debt: number | null;
+    tax_rate: number | null;
+    market_equity: number | null;
+    market_debt: number | null;
   };
   ddm: {
-    dividend: number;
-    growth: number;
-    terminal_growth: number;
-    cost_of_equity: number;
+    dividend: number | null;
+    growth: number | null;
+    terminal_growth: number | null;
+    cost_of_equity: number | null;
     horizon: 0 | 3 | 5 | 10;
   };
   assets: {
-    book_assets: number;
-    book_liabilities: number;
-    asset_adjustment: number;
-    liability_adjustment: number;
+    book_assets: number | null;
+    book_liabilities: number | null;
+    asset_adjustment: number | null;
+    liability_adjustment: number | null;
   };
   peers: PeerInput[];
   transactions: PeerInput[];
@@ -71,19 +71,19 @@ export interface WorkbenchSettings {
   debt: number | null;
   shares: number | null;
   price: number | null;
-  minority: number;
-  non_operating_assets: number;
+  minority: number | null;
+  non_operating_assets: number | null;
   terminal_method: "growth" | "exit_multiple";
-  exit_multiple: number;
+  exit_multiple: number | null;
   opening_nwc: number | null;
   scenarios: Record<
     string,
     {
-      growth_delta: number;
-      margin_delta: number;
-      wacc_delta: number;
-      terminal_delta: number;
-      exit_delta: number;
+      growth_delta: number | null;
+      margin_delta: number | null;
+      wacc_delta: number | null;
+      terminal_delta: number | null;
+      exit_delta: number | null;
     }
   >;
 }
@@ -101,39 +101,39 @@ export function settingsFor(w: Workspace): WorkbenchSettings {
       },
       forecast: {
         horizon: 5,
-        growth: 0.05,
-        gross_margin: 0.4,
-        ebitda_margin: 0.2,
+        growth: null,
+        gross_margin: null,
+        ebitda_margin: null,
         opex_ratio: null,
-        depreciation_ratio: 0.03,
-        tax_rate: 0.25,
-        capex_ratio: 0.04,
-        nwc_ratio: 0.15,
-        interest_rate: 0.05,
+        depreciation_ratio: null,
+        tax_rate: null,
+        capex_ratio: null,
+        nwc_ratio: null,
+        interest_rate: null,
         net_borrowing: 0,
         dividends: 0,
         minimum_cash: 0,
         financing: "revolver",
       },
       wacc: {
-        risk_free: 0.04,
-        beta: 1,
-        equity_risk_premium: 0.05,
-        cost_of_debt: 0.05,
-        tax_rate: 0.25,
-        market_equity: 0,
-        market_debt: 0,
+        risk_free: null,
+        beta: null,
+        equity_risk_premium: null,
+        cost_of_debt: null,
+        tax_rate: null,
+        market_equity: null,
+        market_debt: null,
       },
       ddm: {
-        dividend: 0,
-        growth: 0.05,
-        terminal_growth: 0.02,
-        cost_of_equity: 0.1,
+        dividend: null,
+        growth: null,
+        terminal_growth: null,
+        cost_of_equity: null,
         horizon: 5,
       },
       assets: {
-        book_assets: 0,
-        book_liabilities: 0,
+        book_assets: null,
+        book_liabilities: null,
         asset_adjustment: 0,
         liability_adjustment: 0,
       },
@@ -146,7 +146,7 @@ export function settingsFor(w: Workspace): WorkbenchSettings {
       minority: 0,
       non_operating_assets: 0,
       terminal_method: "growth",
-      exit_multiple: 10,
+      exit_multiple: null,
       opening_nwc: null,
       scenarios: {
         Bear: {

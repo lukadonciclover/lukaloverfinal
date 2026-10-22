@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, type ReactNode, useCallback, useContext, useEffect, useRef, useState } from "react";
-import { createBlankWorkspace, createDemoWorkspace } from "@/lib/demo";
+import { createBlankWorkspace } from "@/lib/defaults";
 import { dcfFingerprint, valuationFingerprint } from "@/lib/fingerprint";
 import { deleteIndexedWorkspace, loadIndexedWorkspace, saveIndexedWorkspace } from "@/lib/storage";
 import type { AgentRun, Experiment, Portfolio, ResearchProject, Workspace } from "@/lib/types";
@@ -15,8 +15,8 @@ const MAX_PROJECTS = 100;
 export type PersistenceStatus = "loading" | "saving" | "saved" | "local-only" | "error";
 
 interface WorkspaceContextValue {
-  workspace: Workspace;
-  project: ResearchProject;
+  workspace: Workspace | null;
+  project: ResearchProject | null;
   projects: ResearchProject[];
   activeProjectId: string;
   hydrated: boolean;
@@ -54,11 +54,6 @@ function newProject(workspace: Workspace, name: string): ResearchProject {
   if (!cleanName || cleanName.length > 300) throw new Error("Project name is missing or too long.");
   const timestamp = now();
   return { id: crypto.randomUUID(), name: cleanName, archived: false, created_at: timestamp, updated_at: timestamp, workspace };
-}
-
-function createDemoPortfolio(): Portfolio {
-  const project = newProject(createDemoWorkspace(), "Northstar Components (Synthetic)");
-  return { portfolio_version: 1, active_project_id: project.id, projects: [project] };
 }
 
 function validateWorkspace(workspace: Workspace): void {
@@ -103,7 +98,7 @@ function validateWorkspace(workspace: Workspace): void {
   if (typeof workspace.workflow.active !== "boolean" || !Number.isInteger(workspace.workflow.current_step) || workspace.workflow.current_step < 1 || workspace.workflow.current_step > 10) throw new Error("Workflow state is malformed.");
   if (!["Manual AI Mode", "Configured External Inference", "Financial Analytics Only"].includes(workspace.settings.mode) || typeof workspace.settings.persistDocumentText !== "boolean") throw new Error("Workspace settings are malformed.");
   const arrays = [workspace.dcfInputs.revenue_growth, workspace.dcfInputs.ebit_margin, workspace.dcfInputs.tax_rate, workspace.dcfInputs.depreciation_pct_revenue, workspace.dcfInputs.capex_pct_revenue, workspace.dcfInputs.nwc_pct_revenue];
-  if (arrays.some((values) => !Array.isArray(values) || values.length === 0 || values.length > 20 || values.some((value) => !Number.isFinite(value)))) throw new Error("DCF forecast assumptions are malformed.");
+  if (arrays.some((values) => !Array.isArray(values) || values.length === 0 || values.length > 20 || values.some((value) => !finiteOrNull(value)))) throw new Error("DCF forecast assumptions are malformed.");
   const scalars = [workspace.dcfInputs.base_revenue, workspace.dcfInputs.wacc, workspace.dcfInputs.terminal_growth, workspace.dcfInputs.cash, workspace.dcfInputs.debt, workspace.dcfInputs.minority_interest, workspace.dcfInputs.non_operating_assets];
   if (scalars.some((value) => !finiteOrNull(value)) || !finiteOrNull(workspace.dcfInputs.diluted_shares) || !finiteOrNull(workspace.dcfInputs.reference_price)) throw new Error("DCF scalar assumptions are malformed.");
 }
@@ -138,7 +133,7 @@ function migrateExperiment(value: unknown): Experiment {
 
 export function parseWorkspace(value: unknown, allowSensitiveRetention = true): Workspace {
   if (!record(value) || ![1, 2].includes(Number(value.version)) || !record(value.company) || !Array.isArray(value.figures)) throw new Error("This file is not a supported EquityLens workspace export.");
-  const defaults = createDemoWorkspace();
+  const defaults = createBlankWorkspace();
   if (!record(value.dcfInputs) || !Array.isArray(value.documents) || !Array.isArray(value.comparables) || !record(value.agentRuns) || !Array.isArray(value.chats) || !Array.isArray(value.experiments) || !record(value.settings)) throw new Error("The workspace is missing required sections.");
   const company = { ...defaults.company, ...value.company };
   const agentRuns = Object.fromEntries(Object.entries(value.agentRuns).map(([name, run]) => [name, migrateAgentRun(name, run)]));
@@ -185,15 +180,15 @@ function parsePortfolio(value: unknown, allowSensitiveRetention: boolean): Portf
     const project = newProject(workspace, workspace.company.name);
     return { portfolio_version: 1, active_project_id: project.id, projects: [project] };
   }
-  if (!value.projects.length || value.projects.length > MAX_PROJECTS) throw new Error("Portfolio has an unsupported number of projects.");
+  if (value.projects.length > MAX_PROJECTS) throw new Error("Portfolio has an unsupported number of projects.");
   const projects = value.projects.map((item) => {
     if (!record(item) || typeof item.id !== "string" || typeof item.name !== "string" || !item.name.trim() || item.name.length > 300) throw new Error("A project record is malformed.");
     return { id: item.id, name: item.name, archived: item.archived === true, created_at: typeof item.created_at === "string" ? item.created_at : now(), updated_at: typeof item.updated_at === "string" ? item.updated_at : now(), workspace: parseWorkspace(item.workspace, allowSensitiveRetention) };
   });
   if (new Set(projects.map((project) => project.id)).size !== projects.length) throw new Error("Project IDs must be unique.");
   const available = projects.filter((project) => !project.archived);
-  if (!available.length) throw new Error("Portfolio must contain an active project.");
-  const active = available.some((project) => project.id === value.active_project_id) ? value.active_project_id : available[0].id;
+
+  const active = available.some((project) => project.id === value.active_project_id) ? value.active_project_id : available[0]?.id ?? "";
   return { portfolio_version: 1, active_project_id: active, projects };
 }
 
@@ -218,14 +213,14 @@ function persistencePortfolioCopy(portfolio: Portfolio, allowSensitiveRetention 
 }
 
 export function WorkspaceProvider({ children }: { children: ReactNode }) {
-  const [portfolio, setPortfolio] = useState<Portfolio>(createDemoPortfolio);
+  const [portfolio, setPortfolio] = useState<Portfolio>({ portfolio_version: 1, active_project_id: "", projects: [] });
   const [hydrated, setHydrated] = useState(false);
   const [persistenceBlocked, setPersistenceBlocked] = useState(false);
   const [persistenceStatus, setPersistenceStatus] = useState<PersistenceStatus>("loading");
   const [persistenceMessage, setPersistenceMessage] = useState("Loading browser projects.");
   const latestPortfolioRef = useRef(portfolio);
   latestPortfolioRef.current = portfolio;
-  const activeProject = portfolio.projects.find((project) => project.id === portfolio.active_project_id) ?? portfolio.projects[0];
+  const activeProject = portfolio.projects.find((project) => project.id === portfolio.active_project_id) ?? null;
 
   useEffect(() => {
     let active = true;
@@ -274,13 +269,13 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   }, [portfolio, hydrated, persistenceBlocked]);
 
   const updateWorkspace = useCallback((updater: Workspace | ((current: Workspace) => Workspace)) => {
-    const boundProjectId = activeProject.id;
+    const boundProjectId = activeProject?.id;
     setPortfolio((current) => ({ ...current, projects: current.projects.map((project) => {
       if (project.id !== boundProjectId) return project;
       const next = typeof updater === "function" ? updater(project.workspace) : updater;
       return next === project.workspace ? project : { ...project, updated_at: now(), workspace: { ...next, version: 2, revision: project.workspace.revision + 1 } };
     }) }));
-  }, [activeProject.id]);
+  }, [activeProject?.id]);
 
   const createProject = useCallback((name = "Untitled company") => {
     if (latestPortfolioRef.current.projects.length >= MAX_PROJECTS) throw new Error(`Projects are limited to ${MAX_PROJECTS}.`);
@@ -327,8 +322,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       throw reason;
     }
   }, []);
-  const resetWorkspace = useCallback(() => { setPersistenceBlocked(false); updateWorkspace(createDemoWorkspace()); }, [updateWorkspace]);
-  const exportWorkspace = useCallback(() => JSON.stringify({ equitylens_project_version: 1, project: { ...activeProject, workspace: persistenceCopy(activeProject.workspace) } }, null, 2), [activeProject]);
+  const resetWorkspace = useCallback(() => { setPersistenceBlocked(false); updateWorkspace(createBlankWorkspace()); }, [updateWorkspace]);
+  const exportWorkspace = useCallback(() => JSON.stringify({ equitylens_project_version: 1, project: { ...activeProject, workspace: persistenceCopy(requireActiveProject(activeProject).workspace) } }, null, 2), [activeProject]);
   const importWorkspace = useCallback((raw: string) => {
     if (latestPortfolioRef.current.projects.length >= MAX_PROJECTS) throw new Error(`Projects are limited to ${MAX_PROJECTS}.`);
     if (new Blob([raw]).size > MAX_IMPORT_BYTES) throw new Error("Project imports are limited to 10 MB.");
@@ -342,11 +337,21 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     setPortfolio((current) => ({ ...current, active_project_id: project.id, projects: [...current.projects, project] }));
   }, []);
 
-  return <WorkspaceContext.Provider value={{ workspace: activeProject.workspace, project: activeProject, projects: portfolio.projects, activeProjectId: activeProject.id, hydrated, persistenceStatus, persistenceMessage, updateWorkspace, createProject, renameProject, duplicateProject, switchProject, archiveProject, restoreProject, setDocumentRetention, resetWorkspace, exportWorkspace, importWorkspace }}>{hydrated ? children : <div className="flex min-h-[60vh] items-center justify-center text-sm text-mist">Loading browser projects...</div>}</WorkspaceContext.Provider>;
+  return <WorkspaceContext.Provider value={{ workspace: activeProject?.workspace ?? null, project: activeProject, projects: portfolio.projects, activeProjectId: activeProject?.id ?? "", hydrated, persistenceStatus, persistenceMessage, updateWorkspace, createProject, renameProject, duplicateProject, switchProject, archiveProject, restoreProject, setDocumentRetention, resetWorkspace, exportWorkspace, importWorkspace }}>{hydrated ? children : <div className="flex min-h-[60vh] items-center justify-center text-sm text-mist">Loading browser projects...</div>}</WorkspaceContext.Provider>;
 }
 
-export function useWorkspace(): WorkspaceContextValue {
+export function useProjectPortfolio(): WorkspaceContextValue {
   const value = useContext(WorkspaceContext);
   if (!value) throw new Error("useWorkspace must be used inside WorkspaceProvider");
   return value;
+}
+
+function requireActiveProject(project: ResearchProject | null): ResearchProject {
+  if (!project) throw new Error("Select or create a project first.");
+  return project;
+}
+export function useWorkspace(): WorkspaceContextValue & {workspace: Workspace; project: ResearchProject} {
+  const value = useProjectPortfolio();
+  const project = requireActiveProject(value.project);
+  return { ...value, project, workspace: project.workspace };
 }

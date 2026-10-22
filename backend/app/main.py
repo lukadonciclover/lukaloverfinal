@@ -28,7 +28,6 @@ from equitylens.financials import FORMULAS, analysis_table, data_quality_issues,
 from equitylens.models import DCFInputs
 from equitylens.workbench import Workbench, Peer, evaluate
 from equitylens.workbook import export_workbench
-from equitylens.sample import synthetic_company, synthetic_figures
 from equitylens.valuation import (
     calculate_dcf,
     calculate_multiples,
@@ -70,17 +69,6 @@ def health() -> dict[str, Any]:
         "status": "ok",
         "service": "equitylens-api",
         "calculation_engine": "deterministic",
-    }
-
-
-@app.get("/v1/demo")
-def demo_workspace() -> dict[str, Any]:
-    company = synthetic_company()
-    figures = synthetic_figures(company.id or 1)
-    return {
-        "company": company.model_dump(mode="json"),
-        "figures": [figure.model_dump(mode="json") for figure in figures],
-        "disclaimer": "All figures are synthetic and are not actual company information.",
     }
 
 

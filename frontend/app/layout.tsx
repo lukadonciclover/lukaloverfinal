@@ -5,7 +5,7 @@ import { WorkspaceProvider } from "@/lib/workspace";
 
 export const metadata: Metadata = {
   title: "EquityLens | Valuation Workbench",
-  description: "Source-grounded financial analysis and reproducible valuation"
+  description: "Financial modeling and valuation"
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {

@@ -79,19 +79,19 @@ export interface DocumentRecord {
 }
 
 export interface DCFInputs {
-  base_revenue: number;
-  revenue_growth: number[];
-  ebit_margin: number[];
-  tax_rate: number[];
-  depreciation_pct_revenue: number[];
-  capex_pct_revenue: number[];
-  nwc_pct_revenue: number[];
-  wacc: number;
-  terminal_growth: number;
-  cash: number;
-  debt: number;
-  minority_interest: number;
-  non_operating_assets: number;
+  base_revenue: number | null;
+  revenue_growth: (number | null)[];
+  ebit_margin: (number | null)[];
+  tax_rate: (number | null)[];
+  depreciation_pct_revenue: (number | null)[];
+  capex_pct_revenue: (number | null)[];
+  nwc_pct_revenue: (number | null)[];
+  wacc: number | null;
+  terminal_growth: number | null;
+  cash: number | null;
+  debt: number | null;
+  minority_interest: number | null;
+  non_operating_assets: number | null;
   diluted_shares: number | null;
   reference_price: number | null;
 }

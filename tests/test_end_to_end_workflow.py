@@ -33,7 +33,8 @@ Capital expenditures,2024,6
     assert source["chunks"] and source["suggestions"]
     assert all(chunk["chunk_id"] for chunk in source["chunks"])
 
-    company = client.get("/v1/demo").json()["company"] | {
+    company = {
+        "id": 1, "currency": "USD",
         "name": "Workflow Integration Co. (Synthetic)",
         "ticker": "WFLOW",
         "latest_financial_year": 2024,
