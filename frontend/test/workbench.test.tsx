@@ -52,7 +52,7 @@ it("hides stale results immediately when assumptions change", async () => {
       <ModelsPage />
     </WorkspaceProvider>,
   );
-  expect(await screen.findByText("123.45")).toBeInTheDocument();
+  expect(await screen.findByText("$123.45/share")).toBeInTheDocument();
   let resolve: (value: unknown) => void = () => undefined;
   vi.mocked(apiPost).mockImplementation(
     () =>
@@ -60,13 +60,13 @@ it("hides stale results immediately when assumptions change", async () => {
         resolve = r;
       }),
   );
-  fireEvent.change(screen.getByRole("spinbutton", { name: "cash" }), {
+  fireEvent.change(screen.getByRole("spinbutton", { name: "Cash" }), {
     target: { value: "25" },
   });
-  expect(screen.queryByText("123.45")).not.toBeInTheDocument();
+  expect(screen.queryByText("$123.45/share")).not.toBeInTheDocument();
   await waitFor(() => expect(apiPost).toHaveBeenCalledTimes(2));
   await act(async () =>
     resolve({ ...result, models: { DDM: { per_share: 234.56 } } }),
   );
-  expect(await screen.findByText("234.56")).toBeInTheDocument();
+  expect(await screen.findByText("$234.56/share")).toBeInTheDocument();
 });

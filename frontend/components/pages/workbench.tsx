@@ -1,4 +1,13 @@
 "use client";
+import { CreateProjectForm } from "@/components/create-project-form";
+import { FinancialDataTable } from "@/components/financial-data-table";
+import { FinancialChartTooltip } from "@/components/financial-chart";
+import {
+  formatFinancialLabel,
+  formatFinancialValue,
+  formatFinancialMessage,
+  financialInputHint,
+} from "@/lib/financial-formatting";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import {
@@ -16,52 +25,14 @@ import {
   settingsFor,
   type PeerInput,
   type WorkbenchResult,
+  type ModelOutput,
   type WorkbenchSettings,
   type NumericRow,
 } from "@/lib/workbench";
-import {
-  Button,
-  Card,
-  Field,
-  Notice,
-  PageHeader,
-  formatNumber,
-} from "@/components/ui";
+import { Button, Card, Field, Notice, PageHeader } from "@/components/ui";
 
-const label = (s: string) => s.replaceAll("_", " ");
-export function DataTable({ rows }: { rows: NumericRow[] }) {
-  const keys = [...new Set(rows.flatMap(Object.keys))];
-  return rows.length ? (
-    <div className="table-wrap mt-4">
-      <table className="data-table">
-        <thead>
-          <tr>
-            {keys.map((k) => (
-              <th key={k}>{label(k)}</th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((r, i) => (
-            <tr key={i}>
-              {keys.map((k) => (
-                <td key={k}>
-                  {typeof r[k] === "number"
-                    ? formatNumber(r[k] as number, 2)
-                    : (r[k] ?? "Unavailable")}
-                </td>
-              ))}
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  ) : (
-    <p className="py-5 text-sm text-mist">
-      Supply the required inputs to calculate results.
-    </p>
-  );
-}
+const label = formatFinancialLabel;
+const DataTable = FinancialDataTable;
 function useModel() {
   const { workspace, updateWorkspace } = useWorkspace();
   const settings = settingsFor(workspace),
@@ -114,10 +85,10 @@ function Errors({
 }) {
   return (
     <div className="my-4 space-y-2" aria-live="polite">
-      {error && <Notice kind="error">{error}</Notice>}
+      {error && <Notice kind="error">{formatFinancialMessage(error)}</Notice>}
       {Object.entries(result?.errors ?? {}).map(([k, v]) => (
         <Notice kind="warning" key={k}>
-          {k}: {v}
+          {label(k)}: {formatFinancialMessage(v)}
         </Notice>
       ))}
     </div>
@@ -132,6 +103,7 @@ function NumberInputs<T extends object>({
   change: (key: keyof T, value: number | null) => void;
   omit?: string[];
 }) {
+  const { workspace } = useWorkspace();
   return (
     <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
       {Object.entries(values)
@@ -143,6 +115,7 @@ function NumberInputs<T extends object>({
           <Field
             key={k}
             label={label(k)}
+            hint={financialInputHint(k, workspace.company.currency)}
             type="number"
             step="any"
             value={v ?? ""}
@@ -158,18 +131,13 @@ function NumberInputs<T extends object>({
   );
 }
 export function ValuationDashboard() {
-  const { workspace, projects, createProject, persistenceStatus } =
-    useWorkspace();
+  const { workspace, projects, persistenceStatus } = useWorkspace();
   return (
     <>
       <PageHeader
         kicker="Equity Lens"
         title="Dashboard"
-        actions={
-          <Button onClick={() => createProject("Untitled valuation")}>
-            Create Project
-          </Button>
-        }
+        actions={<CreateProjectForm />}
       />
       <div className="grid gap-5 md:grid-cols-3">
         {[
@@ -183,9 +151,25 @@ export function ValuationDashboard() {
           </Card>
         ))}
       </div>
-      {!workspace.figures.length && <p className="my-4 text-sm text-mist">No financial data available</p>}
+      {!workspace.figures.length && (
+        <p className="my-4 text-sm text-mist">No financial data available</p>
+      )}
       <div className="mt-4 flex flex-wrap gap-3">
-        {[["workspace", "Financial Data"], ["financials", "Financial Analysis"], ["forecasting", "Forecasting"], ["valuation", "Valuation Models"], ["report", "Results & Export"]].map(([href, title]) => <Link key={href} href={`/${href}`} className="border border-line px-4 py-2 text-sm hover:border-gold">{title}</Link>)}
+        {[
+          ["workspace", "Financial Data"],
+          ["financials", "Financial Analysis"],
+          ["forecasting", "Forecasting"],
+          ["valuation", "Valuation Models"],
+          ["report", "Results & Export"],
+        ].map(([href, title]) => (
+          <Link
+            key={href}
+            href={`/${href}`}
+            className="border border-line px-4 py-2 text-sm hover:border-gold"
+          >
+            {title}
+          </Link>
+        ))}
       </div>
       <p className="mt-5 text-sm text-mist">
         {projects.length} browser-local projects. Export a project backup to
@@ -276,7 +260,7 @@ export function ForecastingPage() {
       </Card>
       <Errors result={result} error={error} />
       <Card>
-        <h2>Historical actuals</h2>
+        <h2>Historical Actuals</h2>
         <DataTable
           rows={Object.entries(result?.history ?? {}).map(([period, row]) => ({
             period,
@@ -288,7 +272,10 @@ export function ForecastingPage() {
         <h2 className="text-teal">
           Projected income, balance sheet and cash flow statements
         </h2>
-        <DataTable rows={result?.forecast ?? []} />
+        <DataTable
+          rows={result?.forecast ?? []}
+          caption="Forecast outputs ? calculated from user-entered assumptions"
+        />
       </Card>
     </>
   );
@@ -373,7 +360,7 @@ function PeerEditor({
           />
         </label>
       </div>
-      {error && <Notice kind="error">{error}</Notice>}
+      {error && <Notice kind="error">{formatFinancialMessage(error)}</Notice>}
       <p className="text-xs text-mist">
         Import columns match this table with underscores. Currency and
         unit_scale are mandatory. Review imported rows before inclusion.
@@ -437,7 +424,7 @@ function PeerEditor({
                 {numeric.map((k) => (
                   <td key={k}>
                     <input
-                      aria-label={`${k} row ${i + 1}`}
+                      aria-label={`${label(k)} row ${i + 1}`}
                       className="field w-28"
                       type="number"
                       step="any"
@@ -597,10 +584,10 @@ export function ModelsPage() {
                 {result?.wacc && <DataTable rows={[result.wacc]} />}
               </div>
             )}
-              <NumberInputs
-                omit={s.enabled.wacc ? ["wacc"] : []}
-                values={{
-                  wacc: workspace.dcfInputs.wacc,
+            <NumberInputs
+              omit={s.enabled.wacc ? ["wacc"] : []}
+              values={{
+                wacc: workspace.dcfInputs.wacc,
                 terminal_growth: workspace.dcfInputs.terminal_growth,
               }}
               change={(k, v) =>
@@ -638,7 +625,8 @@ export function ModelsPage() {
                       ...w,
                       dcfInputs: {
                         ...w.dcfInputs,
-                        base_revenue: e.target.value === "" ? null : Number(e.target.value),
+                        base_revenue:
+                          e.target.value === "" ? null : Number(e.target.value),
                       },
                     }))
                   }
@@ -653,9 +641,8 @@ export function ModelsPage() {
                       updateWorkspace((w) => {
                         const d = { ...w.dcfInputs };
                         for (const k of annual)
-                          d[k] = Array.from(
-                            { length: n },
-                            (_, i) => i < d[k].length ? d[k][i] : d[k].at(-1) ?? null,
+                          d[k] = Array.from({ length: n }, (_, i) =>
+                            i < d[k].length ? d[k][i] : (d[k].at(-1) ?? null),
                           );
                         return { ...w, dcfInputs: d };
                       });
@@ -683,7 +670,7 @@ export function ModelsPage() {
                           {annual.map((k) => (
                             <td key={k}>
                               <input
-                                aria-label={`${k} year ${i + 1}`}
+                                aria-label={`${label(k)} year ${i + 1}`}
                                 className="field w-28"
                                 type="number"
                                 step="any"
@@ -694,7 +681,11 @@ export function ModelsPage() {
                                     dcfInputs: {
                                       ...w.dcfInputs,
                                       [k]: w.dcfInputs[k].map((v, n) =>
-                                        n === i ? (e.target.value === "" ? null : Number(e.target.value)) : v,
+                                        n === i
+                                          ? e.target.value === ""
+                                            ? null
+                                            : Number(e.target.value)
+                                          : v,
                                       ),
                                     },
                                   }))
@@ -790,6 +781,27 @@ export function ModelsPage() {
     </>
   );
 }
+export function comparableEquity(
+  method: string,
+  model: ModelOutput,
+  shares: number | null,
+): number | null {
+  if (method === "DDM") {
+    if (
+      shares === null ||
+      !Number.isFinite(shares) ||
+      shares <= 0 ||
+      model.per_share == null ||
+      !Number.isFinite(model.per_share)
+    )
+      return null;
+    const value = model.per_share * shares;
+    return Number.isFinite(value) ? value : null;
+  }
+  return model.equity_value != null && Number.isFinite(model.equity_value)
+    ? model.equity_value
+    : null;
+}
 function Results({
   result,
   price,
@@ -797,10 +809,13 @@ function Results({
   result: WorkbenchResult | null;
   price: number | null;
 }) {
+  const { workspace } = useWorkspace();
+  const currency = result?.currency ?? workspace.company.currency;
+  const shares = settingsFor(workspace).shares;
   const ranges = Object.entries(result?.models ?? {}).flatMap(
     ([method, m]) =>
       m.ranges?.map((r) => ({
-        method: `${method} / ${r.multiple}`,
+        method: `${label(method)} / ${label(r.multiple)}`,
         low: r.low,
         high: r.high,
         equity_value: r.equity_value,
@@ -809,10 +824,10 @@ function Results({
         book_equity: null,
       })) ?? [
         {
-          method,
-          low: m.equity_value ?? null,
-          high: m.equity_value ?? null,
-          equity_value: m.equity_value ?? null,
+          method: label(method),
+          low: comparableEquity(method, m, shares),
+          high: comparableEquity(method, m, shares),
+          equity_value: comparableEquity(method, m, shares),
           per_share: m.per_share ?? null,
           enterprise_value: m.enterprise_value ?? null,
           book_equity: m.book_equity ?? null,
@@ -827,10 +842,8 @@ function Results({
       <Card className="mt-5">
         <h2 className="text-xl">Valuation comparison</h2>
         <p className="mt-2 text-sm text-mist">
-          {result?.currency} actual units. DCF values operating cash flow, DDM
-          values dividends per share, and asset valuation estimates net assets.
-          Multiples reflect selected market or transaction observations. Methods
-          have different economic assumptions.
+          {currency} - actual units. Enterprise value, equity value and value
+          per share are shown separately.
         </p>
         <DataTable
           rows={ranges.map((r) => ({
@@ -843,31 +856,65 @@ function Results({
           <div className="mt-5 h-80">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart layout="vertical" data={chart}>
-                <XAxis type="number" />
+                <XAxis
+                  type="number"
+                  tickFormatter={(v) =>
+                    formatFinancialValue("equity_value", v, {
+                      currency,
+                      compact: true,
+                    })
+                  }
+                  fontSize={12}
+                />
                 <YAxis
                   dataKey="method"
                   type="category"
-                  width={190}
-                  fontSize={11}
+                  width={125}
+                  fontSize={12}
                 />
-                <Tooltip />
-                <Bar dataKey="range" fill="#45b6ad" name="Equity value range" minPointSize={3} />
+                <Tooltip
+                  content={<FinancialChartTooltip currency={currency} />}
+                />
+                <Bar
+                  dataKey="range"
+                  fill="#45b6ad"
+                  name="Equity value range"
+                  minPointSize={3}
+                />
               </BarChart>
             </ResponsiveContainer>
           </div>
         )}
         <p className="mt-3 text-xs text-mist">
           Football field: equity ranges. Thin marks denote point estimates; read
-          exact values above. DDM is per share. Upside/downside is a decimal,
-          not a recommendation.
+          exact values above. DDM enters this chart only when a valid share
+          count converts its per-share result to total equity. Upside/downside
+          is not a recommendation.
         </p>
       </Card>
-      {result?.models.DCF?.forecast && <Card className="mt-5"><h2 className="text-lg">DCF cash-flow and discounting schedule</h2><DataTable rows={result.models.DCF.forecast}/><DataTable rows={[{terminal_value:result.models.DCF.terminal_value ?? null,pv_terminal_value:result.models.DCF.pv_terminal_value ?? null}]}/><p className="mt-3 text-xs text-mist">Year-end discounting. Terminal value is measured at the end of the final forecast year.</p></Card>}
+      {result?.models.DCF?.forecast && (
+        <Card className="mt-5">
+          <h2 className="text-lg">DCF cash-flow and discounting schedule</h2>
+          <DataTable rows={result.models.DCF.forecast} />
+          <DataTable
+            rows={[
+              {
+                terminal_value: result.models.DCF.terminal_value ?? null,
+                pv_terminal_value: result.models.DCF.pv_terminal_value ?? null,
+              },
+            ]}
+          />
+          <p className="mt-3 text-xs text-mist">
+            Year-end discounting. Terminal value is measured at the end of the
+            final forecast year.
+          </p>
+        </Card>
+      )}
       {Object.entries(result?.models ?? {})
         .filter(([, m]) => m.multiples)
         .map(([name, m]) => (
           <Card key={name} className="mt-5">
-            <h3>{name}</h3>
+            <h3>{label(name)}</h3>
             <DataTable rows={m.multiples ?? []} />
             <DataTable
               rows={Object.entries(m.statistics ?? {}).map(
@@ -947,19 +994,41 @@ export function ResultsPage() {
             <table className="data-table">
               <thead>
                 <tr>
-                  <th>Row / column</th>
+                  <th>
+                    {kind === "growth"
+                      ? "Terminal Growth / WACC"
+                      : kind === "exit_multiple"
+                        ? "Exit Multiple / WACC"
+                        : "Margin / Growth Adjustment"}
+                  </th>
                   {grid.columns.map((c, i) => (
-                    <th key={i}>{formatNumber(c, 3)}</th>
+                    <th key={i} className="numeric">
+                      {formatFinancialValue(
+                        kind === "operating" ? "growth_delta" : "wacc",
+                        c,
+                      )}
+                    </th>
                   ))}
                 </tr>
               </thead>
               <tbody>
                 {grid.rows.map((r, i) => (
                   <tr key={i}>
-                    <th>{formatNumber(r, 3)}</th>
+                    <th className="numeric">
+                      {formatFinancialValue(
+                        kind === "growth"
+                          ? "terminal_growth"
+                          : kind === "exit_multiple"
+                            ? "exit_multiple"
+                            : "margin_delta",
+                        r,
+                      )}
+                    </th>
                     {grid.values[i].map((v, j) => (
-                      <td key={j} title={`Row ${r}; column ${grid.columns[j]}`}>
-                        {formatNumber(v, 2)}
+                      <td key={j} className="numeric">
+                        {formatFinancialValue("equity_value", v, {
+                          currency: workspace.company.currency,
+                        })}
                       </td>
                     ))}
                   </tr>

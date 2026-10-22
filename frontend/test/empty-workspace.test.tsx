@@ -13,7 +13,7 @@ it("persists a genuinely empty portfolio and creates the first blank project", a
   expect(await screen.findByText("No valuation projects yet.")).toBeInTheDocument();
   await waitFor(() => expect(storage.save).toHaveBeenCalledWith({portfolio_version:1, active_project_id:"", projects:[]}));
   fireEvent.click(screen.getByRole("button", {name:"Create Project"}));
-  fireEvent.change(screen.getByLabelText("Project name"), {target:{value:"My Company"}});
+  fireEvent.change(screen.getByRole("textbox", {name: /Project Name/}), {target:{value:"My Company"}});
   fireEvent.click(screen.getByRole("button", {name:"Create Project"}));
   expect(await screen.findByText("My Company")).toBeInTheDocument();
   expect(screen.getByText("No financial data available")).toBeInTheDocument();

@@ -16,3 +16,5 @@ describe("valuation pages",()=>{it.each(pages)("renders page %#",async(Page,titl
  render(<WorkspaceProvider><Page/></WorkspaceProvider>);
  expect(await screen.findByRole("heading",{level:1,name:title})).toBeInTheDocument();
 });});
+
+vi.mock("next/navigation", () => ({useRouter: () => ({push: vi.fn()})}));
