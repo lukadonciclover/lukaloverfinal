@@ -37,7 +37,7 @@ body {
 
 button, input, select, textarea { font: inherit; }
 
-input[type="number"] { font-variant-numeric: tabular-nums; }
+input[type="number"] { font-variant-numeric: tabular-nums; color: #93bafa; }
 
 ::-webkit-scrollbar { width: 8px; height: 8px; }
 ::-webkit-scrollbar-track { background: #081119; }

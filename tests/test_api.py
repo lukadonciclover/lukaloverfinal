@@ -29,7 +29,7 @@ def dcf_payload():
 
 
 def test_health_demo_and_dcf_endpoints():
-    assert client.get("/health").json()["manual_ai_default"] is True
+    assert client.get("/health").json()["calculation_engine"] == "deterministic"
     demo = client.get("/v1/demo")
     assert demo.status_code == 200
     assert demo.json()["company"]["is_synthetic"] is True
@@ -66,38 +66,8 @@ def test_csv_document_upload_is_processed_without_retention():
     assert body["chunks"]
 
 
-def test_manual_agent_validation_and_prompt_generation():
-    prompt = client.post(
-        "/v1/prompts/agent",
-        json={"agent_name": "Financial Analyst", "evidence": [], "verified_financials": {}},
-    )
-    assert prompt.status_code == 200
-    assert "untrusted source material" in prompt.json()["prompt"]
-    valid_output = {
-        "summary": "Insufficient evidence.",
-        "findings": [],
-        "data_gaps": ["No source documents"],
-    }
-    validation = client.post(
-        "/v1/ai/validate",
-        json={"agent_name": "Financial Analyst", "raw_output": json.dumps(valid_output)},
-    )
-    assert validation.status_code == 200
-    assert validation.json()["valid"] is True
-    assert "manually imported" in validation.json()["provenance"]
 
 
-def test_report_download_and_unconfigured_inference():
-    demo = client.get("/v1/demo").json()
-    report = client.post(
-        "/v1/reports/pdf",
-        json={"company": demo["company"], "figures": demo["figures"], "valuation": {}, "agent_outputs": {}},
-    )
-    assert report.status_code == 200
-    assert report.content.startswith(b"%PDF")
-    assert "attachment" in report.headers["content-disposition"]
-    inference = client.post("/v1/inference/generate", json={"prompt": "test"})
-    assert inference.status_code == 503
 
 
 def test_upload_rejects_unsupported_files():

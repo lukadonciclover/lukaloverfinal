@@ -85,7 +85,7 @@ export function createDemoWorkspace(): Workspace {
     thesis: null,
     reportSnapshot: null,
     workflow: { active: false, current_step: 1 },
-    settings: { mode: "Manual AI Mode", persistDocumentText: false }
+    settings: { mode: "Financial Analytics Only", persistDocumentText: false }
   };
 }
 

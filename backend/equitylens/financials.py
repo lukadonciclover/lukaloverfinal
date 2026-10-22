@@ -18,7 +18,7 @@ FORMULAS = {
     "Return on equity": "Net income / Average total equity",
     "Current ratio": "Total current assets / Total current liabilities",
     "Debt-to-equity": "Total debt / Total equity",
-    "Net debt": "Short-term debt + Long-term debt - Cash - Short-term investments",
+    "Net debt": "Short-term debt + Long-term debt - Cash",
     "Free cash flow": "Operating cash flow - Capital expenditure",
     "Free cash flow margin": "Free cash flow / Revenue",
     "Cash conversion": "Operating cash flow / Net income",
@@ -26,14 +26,14 @@ FORMULAS = {
 
 
 def safe_divide(numerator: float | None, denominator: float | None) -> float | None:
-    if numerator is None or denominator is None or denominator == 0:
+    if numerator is None or denominator is None or denominator <= 0:
         return None
     result = numerator / denominator
     return result if math.isfinite(result) else None
 
 
 def growth(current: float | None, prior: float | None) -> float | None:
-    if current is None or prior is None or prior == 0:
+    if current is None or prior is None or prior <= 0:
         return None
     return current / prior - 1
 
@@ -51,15 +51,28 @@ def average(current: float | None, prior: float | None) -> float | None:
 
 
 def calculate_period_metrics(current: dict[str, float | None], prior: dict[str, float | None] | None = None) -> dict[str, float | None]:
+    current = dict(current)
+    if current.get("gross_profit") is None:
+        current["gross_profit"] = subtract_if_complete(current.get("revenue"), current.get("cost_of_goods_sold"))
+    if current.get("ebitda") is None:
+        current["ebitda"] = add_if_complete(current.get("ebit"), current.get("depreciation_amortization"))
     prior = prior or {}
     revenue = current.get("revenue")
     debt = add_if_complete(current.get("short_term_debt"), current.get("long_term_debt"))
-    liquidity = add_if_complete(current.get("cash"), current.get("short_term_investments"))
+    liquidity = current.get("cash")
     net_debt = subtract_if_complete(debt, liquidity)
     capex = current.get("capital_expenditure")
     fcf = subtract_if_complete(current.get("operating_cash_flow"), abs(capex) if capex is not None else None)
     return {
         "revenue_growth": growth(revenue, prior.get("revenue")),
+        "ebitda_growth": growth(current.get("ebitda"), prior.get("ebitda")),
+        "ebit_growth": growth(current.get("ebit"), prior.get("ebit")),
+        "net_income_growth": growth(current.get("net_income"), prior.get("net_income")),
+        "interest_coverage": safe_divide(current.get("ebit"), current.get("interest_expense")) if (current.get("interest_expense") or 0) > 0 else None,
+        "operating_cash_flow_margin": safe_divide(current.get("operating_cash_flow"), revenue),
+        "capex_intensity": safe_divide(abs(capex) if capex is not None else None, revenue),
+        "working_capital": subtract_if_complete(current.get("current_assets"), current.get("current_liabilities")),
+        "cash_flow_conversion": safe_divide(current.get("operating_cash_flow"), current.get("ebitda")) if (current.get("ebitda") or 0) > 0 else None,
         "gross_margin": safe_divide(current.get("gross_profit"), revenue),
         "ebitda_margin": safe_divide(current.get("ebitda"), revenue),
         "operating_margin": safe_divide(current.get("ebit"), revenue),
@@ -113,6 +126,13 @@ def analysis_table(figures: Sequence[Any]) -> pd.DataFrame:
     previous: dict[str, float | None] | None = None
     for period in sorted(periods):
         calculated = calculate_period_metrics(periods[period], previous)
+        first = min(periods)
+        calculated["revenue_cagr"] = cagr(periods[first].get("revenue"), periods[period].get("revenue"), int(period[:4])-int(first[:4])) if period[:4].isdigit() and first[:4].isdigit() else None
+        current = periods[period]
+        invested = subtract_if_complete(add_if_complete(current.get("short_term_debt"), current.get("long_term_debt"), current.get("total_equity")), current.get("cash"))
+        pretax = subtract_if_complete(current.get("ebit"), current.get("interest_expense"))
+        rate = safe_divide(current.get("tax_expense"), pretax) if pretax is not None and pretax > 0 else None
+        calculated["return_on_invested_capital"] = safe_divide(current["ebit"]*(1-rate), invested) if rate is not None and 0 <= rate <= 1 and invested is not None and invested > 0 and current.get("ebit") is not None else None
         rows.append({"period": period, **calculated})
         previous = periods[period]
     return pd.DataFrame(rows).set_index("period") if rows else pd.DataFrame()
@@ -144,4 +164,6 @@ def data_quality_issues(figures: Sequence[Any]) -> list[str]:
         value = figure.value if hasattr(figure, "value") else figure.get("value")
         if metric == "capital_expenditure" and value is not None and value < 0:
             issues.append(f"Capital expenditure in {period} was normalized to a positive cash outflow.")
+        if metric in {"revenue", "ebitda", "ebit", "net_income", "total_equity", "interest_expense"} and value is not None and value <= 0:
+            issues.append(f"Non-positive {metric} in {period}: growth and valuation multiples using it as a denominator may be unavailable.")
     return issues

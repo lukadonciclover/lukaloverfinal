@@ -24,16 +24,20 @@ class DCFResult:
 
 def validate_dcf(inputs: DCFInputs) -> list[str]:
     errors: list[str] = []
+    if inputs.base_revenue <= 0:
+        errors.append("Base revenue must be positive; enter reviewed data or an explicit revenue assumption.")
+    if any(value < 0 for value in [*inputs.depreciation_pct_revenue, *inputs.capex_pct_revenue]):
+        errors.append("D&A and capex ratios must be non-negative; working capital can be signed.")
     lengths = {
         len(inputs.revenue_growth), len(inputs.ebit_margin), len(inputs.tax_rate),
         len(inputs.depreciation_pct_revenue), len(inputs.capex_pct_revenue), len(inputs.nwc_pct_revenue),
     }
     if len(lengths) != 1:
         errors.append("All annual forecast assumption lists must have the same length.")
-    if inputs.wacc <= inputs.terminal_growth:
+    if inputs.terminal_method == "growth" and inputs.wacc <= inputs.terminal_growth:
         errors.append("WACC must exceed terminal growth for the Gordon growth model.")
-    if inputs.wacc <= -1:
-        errors.append("WACC must be greater than -100%.")
+    if inputs.wacc <= 0:
+        errors.append("WACC must be positive.")
     if inputs.terminal_growth <= -1:
         errors.append("Terminal growth must be greater than -100%.")
     if inputs.diluted_shares is not None and inputs.diluted_shares <= 0:
@@ -51,6 +55,8 @@ def validate_dcf(inputs: DCFInputs) -> list[str]:
         scalar_values["Diluted shares"] = inputs.diluted_shares
     if inputs.reference_price is not None:
         scalar_values["Reference price"] = inputs.reference_price
+    if inputs.opening_nwc is not None:
+        scalar_values["Opening working capital"] = inputs.opening_nwc
     for label, value in scalar_values.items():
         if not math.isfinite(value):
             errors.append(f"{label} must be finite.")
@@ -79,12 +85,13 @@ def calculate_dcf(inputs: DCFInputs) -> DCFResult:
         raise ValueError(" ".join(errors))
     rows: list[dict[str, float | int]] = []
     revenue = inputs.base_revenue
-    prior_nwc = revenue * inputs.nwc_pct_revenue[0]
+    prior_nwc = inputs.opening_nwc if inputs.opening_nwc is not None else revenue * inputs.nwc_pct_revenue[0]
     for index in range(len(inputs.revenue_growth)):
         year = index + 1
         revenue *= 1 + inputs.revenue_growth[index]
         ebit = revenue * inputs.ebit_margin[index]
-        nopat = ebit * (1 - inputs.tax_rate[index])
+        cash_taxes = (ebit if inputs.tax_loss_benefit else max(ebit, 0)) * inputs.tax_rate[index]
+        nopat = ebit - cash_taxes
         depreciation = revenue * inputs.depreciation_pct_revenue[index]
         capex = revenue * inputs.capex_pct_revenue[index]
         nwc = revenue * inputs.nwc_pct_revenue[index]
@@ -96,14 +103,18 @@ def calculate_dcf(inputs: DCFInputs) -> DCFResult:
             {
                 "year": year, "revenue": revenue, "growth": inputs.revenue_growth[index],
                 "ebit_margin": inputs.ebit_margin[index], "ebit": ebit, "tax_rate": inputs.tax_rate[index],
-                "nopat": nopat, "depreciation": depreciation, "capex": capex, "nwc": nwc,
+                "cash_taxes": cash_taxes, "nopat": nopat, "depreciation": depreciation, "capex": capex, "nwc": nwc,
                 "change_nwc": change_nwc, "fcff": fcff, "discount_factor": discount_factor, "pv_fcff": pv_fcff,
             }
         )
         prior_nwc = nwc
     forecast = pd.DataFrame(rows).set_index("year")
     final_fcff = float(forecast.iloc[-1]["fcff"])
-    terminal_value = final_fcff * (1 + inputs.terminal_growth) / (inputs.wacc - inputs.terminal_growth)
+    terminal_value = (final_fcff * (1 + inputs.terminal_growth) / (inputs.wacc - inputs.terminal_growth)
+                      if inputs.terminal_method == "growth" else
+                      float(forecast.iloc[-1]["ebit"] + forecast.iloc[-1]["depreciation"]) * inputs.exit_multiple)
+    if inputs.terminal_method == "exit_multiple" and terminal_value <= 0:
+        raise ValueError("Exit multiple requires positive terminal EBITDA.")
     pv_terminal_value = terminal_value / (1 + inputs.wacc) ** len(forecast)
     enterprise_value = float(forecast["pv_fcff"].sum() + pv_terminal_value)
     equity_value = enterprise_value - inputs.debt + inputs.cash - inputs.minority_interest + inputs.non_operating_assets
@@ -172,6 +183,8 @@ def calculate_multiples(row: dict[str, float | str | None]) -> dict[str, float |
         "ev_ebitda": _multiple(enterprise_value, _number(row.get("ebitda"))),
         "ev_ebit": _multiple(enterprise_value, _number(row.get("ebit"))),
         "pe": _multiple(market_cap, _number(row.get("net_income"))),
+        "pb": _multiple(market_cap, _number(row.get("book_equity"))),
+        "ps": _multiple(market_cap, _number(row.get("revenue"))),
     }
 
 

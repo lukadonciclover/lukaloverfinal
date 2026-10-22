@@ -18,6 +18,15 @@ PERIOD_RE = re.compile(r"\b(?:19|20)\d{2}\b")
 NUMBER_RE = re.compile(r"(?<!\w)\(?(?:\$|€|£)?-?\d[\d,]*(?:\.\d+)?\)?")
 
 METRIC_ALIASES = {
+    "depreciation_amortization": ("depreciation and amortization", "depreciation_amortization"),
+    "accounts_receivable": ("accounts receivable", "accounts_receivable"),
+    "inventory": ("inventory", "inventories"),
+    "accounts_payable": ("accounts payable", "accounts_payable"),
+    "property_plant_equipment": ("property plant and equipment", "property_plant_equipment", "property, plant and equipment"),
+    "net_working_capital": ("net working capital", "net_working_capital"),
+    "changes_in_working_capital": ("changes in working capital", "changes_in_working_capital"),
+    "current_liabilities": ("current liabilities", "current_liabilities"),
+    "free_cash_flow": ("free cash flow", "free_cash_flow"),
     "revenue": ("revenue", "net sales", "total sales"),
     "cost_of_goods_sold": ("cost of goods sold", "cost of sales", "cost of revenue"),
     "gross_profit": ("gross profit",),
@@ -132,7 +141,7 @@ def extract_tabular(content: bytes, suffix: str) -> ExtractedDocument:
             text = frame.to_csv(index=False)
         else:
             sheets = pd.read_excel(BytesIO(content), sheet_name=None)
-            text = "\n\n".join(f"Sheet: {name}\n{frame.to_csv(index=False)}" for name, frame in sheets.items())
+            return ExtractedDocument(pages=[{"page": i+1, "text": f"Sheet: {name}\n{frame.to_csv(index=False)}"} for i,(name,frame) in enumerate(sheets.items())], tables=[])
     except Exception as exc:
         raise ValueError(f"The spreadsheet could not be read: {exc}") from exc
     return ExtractedDocument(pages=[{"page": 1, "text": text}], tables=[])
@@ -226,7 +235,30 @@ def suggest_financial_figures(pages: list[dict[str, Any]], currency: str = "USD"
     for page in pages:
         scale, _ = detect_unit_scale(page["text"])
         lines = page["text"].splitlines()
+        header = None
+        wide_periods = []
         for line in lines:
+            cells = next(csv.reader([line])) if "," in line else []
+            lowered = [c.strip().lower() for c in cells]
+            if "metric" in lowered and "period" in lowered and "value" in lowered:
+                header = lowered
+                continue
+            if header and len(cells) == len(header):
+                row = dict(zip(header, cells))
+                value = parse_financial_number(row["value"])
+                if value is not None:
+                    raw_metric = row["metric"].strip().lower()
+                    matches = [(len(alias),key) for key,aliases in METRIC_ALIASES.items() for alias in (*aliases,key) if alias in raw_metric]
+                    metric = max(matches, default=(0,raw_metric))[1]
+                    raw_scale = parse_financial_number(row.get("unit_scale", ""))
+                    suggestions.append(dict(metric=metric, period=row["period"].strip(), value=value,
+                        currency=row.get("currency", currency).strip().upper(), unit_scale=raw_scale or scale,
+                        page=page["page"], quote=line[:500], confidence=.8,
+                        units_confirmed=raw_scale is not None, currency_confirmed=bool(row.get("currency"))))
+                continue
+            if cells and any(re.fullmatch(r"(?:19|20)\d{2}", c.strip()) for c in cells[1:]) and not any(alias in cells[0].lower() for aliases in METRIC_ALIASES.values() for alias in aliases):
+                wide_periods = [(i,c.strip()) for i,c in enumerate(cells) if re.fullmatch(r"(?:19|20)\d{2}",c.strip())]
+                continue
             normalized = line.lower()
             matches = [
                 (len(alias), key)
@@ -236,6 +268,12 @@ def suggest_financial_figures(pages: list[dict[str, Any]], currency: str = "USD"
             ]
             metric = max(matches, default=(0, None))[1]
             if not metric:
+                continue
+            if wide_periods and cells:
+                for index, period in wide_periods:
+                    value = parse_financial_number(cells[index]) if index < len(cells) else None
+                    if value is not None:
+                        suggestions.append(dict(metric=metric,period=period,value=value,currency=currency,unit_scale=scale,page=page["page"],quote=line[:500],confidence=.65))
                 continue
             periods = PERIOD_RE.findall(line)
             cells = next(csv.reader([line])) if "," in line else []

@@ -2,7 +2,8 @@ import { notFound } from "next/navigation";
 import type { Section } from "@/components/app-shell";
 import { PageRouter } from "@/components/page-router";
 
-const sections: Section[] = ["workspace", "financials", "valuation", "thesis", "chat", "report", "settings"];
+const sections: Section[] = ["workspace", "financials", "forecasting", "valuation", "report"];
+export const dynamicParams = false;
 
 export function generateStaticParams() {
   return sections.map((section) => ({ section }));

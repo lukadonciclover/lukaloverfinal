@@ -2,9 +2,10 @@
 
 import { createContext, type ReactNode, useCallback, useContext, useEffect, useRef, useState } from "react";
 import { createBlankWorkspace, createDemoWorkspace } from "@/lib/demo";
-import { dcfFingerprint, valuationFingerprint } from "@/lib/research";
+import { dcfFingerprint, valuationFingerprint } from "@/lib/fingerprint";
 import { deleteIndexedWorkspace, loadIndexedWorkspace, saveIndexedWorkspace } from "@/lib/storage";
 import type { AgentRun, Experiment, Portfolio, ResearchProject, Workspace } from "@/lib/types";
+import { settingsFor } from "@/lib/workbench";
 
 const LEGACY_STORAGE_KEY = "equitylens-workspace-v1";
 const RETENTION_OPT_OUT_KEY = "equitylens-document-retention-disabled";
@@ -61,6 +62,22 @@ function createDemoPortfolio(): Portfolio {
 }
 
 function validateWorkspace(workspace: Workspace): void {
+  if (workspace.valuationWorkbench !== undefined) {
+    const template = settingsFor({ ...workspace, valuationWorkbench: undefined });
+    const validateSettings = (value: unknown, expected: unknown, path: string): void => {
+      if (expected === null) {
+        if (!finiteOrNull(value)) throw new Error(`Invalid valuation input: ${path}`);
+      } else if (Array.isArray(expected)) {
+        if (!Array.isArray(value) || value.length > 500 || value.some(row => !record(row))) throw new Error(`Invalid valuation rows: ${path}`);
+      } else if (record(expected)) {
+        if (!record(value)) throw new Error(`Missing valuation settings: ${path}`);
+        for (const [key, item] of Object.entries(expected)) validateSettings(value[key], item, `${path}.${key}`);
+      } else if (typeof expected === "number" ? !finiteOrNull(value) : typeof value !== typeof expected) {
+        throw new Error(`Invalid valuation setting: ${path}`);
+      }
+    };
+    validateSettings(workspace.valuationWorkbench, template, "valuationWorkbench");
+  }
   if (typeof workspace.company.name !== "string" || !workspace.company.name.trim() || workspace.company.name.length > 300) throw new Error("Company name is missing or too long.");
   if (typeof workspace.company.currency !== "string" || !/^[A-Z]{3}$/.test(workspace.company.currency)) throw new Error("Company currency must be a three-letter code.");
   if (workspace.figures.length > 10_000 || workspace.documents.length > 100 || workspace.chats.length > 2_000 || workspace.experiments.length > 1_000 || workspace.claimAssessments.length > 2_000 || Object.keys(workspace.agentRuns).length > 100) throw new Error("Workspace exceeds supported record limits.");
@@ -88,7 +105,7 @@ function validateWorkspace(workspace: Workspace): void {
   const arrays = [workspace.dcfInputs.revenue_growth, workspace.dcfInputs.ebit_margin, workspace.dcfInputs.tax_rate, workspace.dcfInputs.depreciation_pct_revenue, workspace.dcfInputs.capex_pct_revenue, workspace.dcfInputs.nwc_pct_revenue];
   if (arrays.some((values) => !Array.isArray(values) || values.length === 0 || values.length > 20 || values.some((value) => !Number.isFinite(value)))) throw new Error("DCF forecast assumptions are malformed.");
   const scalars = [workspace.dcfInputs.base_revenue, workspace.dcfInputs.wacc, workspace.dcfInputs.terminal_growth, workspace.dcfInputs.cash, workspace.dcfInputs.debt, workspace.dcfInputs.minority_interest, workspace.dcfInputs.non_operating_assets];
-  if (scalars.some((value) => !Number.isFinite(value)) || !finiteOrNull(workspace.dcfInputs.diluted_shares) || !finiteOrNull(workspace.dcfInputs.reference_price)) throw new Error("DCF scalar assumptions are malformed.");
+  if (scalars.some((value) => !finiteOrNull(value)) || !finiteOrNull(workspace.dcfInputs.diluted_shares) || !finiteOrNull(workspace.dcfInputs.reference_price)) throw new Error("DCF scalar assumptions are malformed.");
 }
 
 function migrateAgentRun(name: string, value: unknown): AgentRun {

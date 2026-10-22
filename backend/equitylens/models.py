@@ -7,12 +7,6 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
-class AIMode(str, Enum):
-    CONFIGURED = "Configured External Inference"
-    MANUAL = "Manual AI Mode"
-    ANALYTICS = "Financial Analytics Only"
-
-
 class ValueOrigin(str, Enum):
     REPORTED = "reported"
     DERIVED = "derived"
@@ -80,92 +74,6 @@ class FinancialFigure(BaseModel):
     notes: str = ""
 
 
-class Finding(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    finding: str
-    supporting_figures: list[str] = Field(default_factory=list)
-    sources: list[str] = Field(default_factory=list)
-    interpretation: str
-    confidence: Literal["low", "medium", "high"]
-    unanswered_questions: list[str] = Field(default_factory=list)
-
-
-class FinancialAnalystResult(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    summary: str
-    findings: list[Finding]
-    data_gaps: list[str] = Field(default_factory=list)
-
-
-class ValuationAnalystResult(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    assessment: str
-    assumption_issues: list[str] = Field(default_factory=list)
-    scenario_commentary: dict[str, str] = Field(default_factory=dict)
-    confidence: Literal["low", "medium", "high"]
-
-
-class RiskItem(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    risk: str
-    evidence: str
-    likelihood: Literal["low", "medium", "high"]
-    impact: Literal["low", "medium", "high"]
-    financial_effect: str
-    evidence_backed: bool
-    sources: list[str] = Field(default_factory=list)
-
-
-class RiskAnalystResult(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    risks: list[RiskItem]
-    data_gaps: list[str] = Field(default_factory=list)
-
-
-class CriticResult(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    contradictions: list[str] = Field(default_factory=list)
-    unsupported_claims: list[str] = Field(default_factory=list)
-    missing_evidence: list[str] = Field(default_factory=list)
-    valuation_challenges: list[str] = Field(default_factory=list)
-    recommendation: Literal["Buy", "Hold", "Sell", "Insufficient Evidence"]
-    rationale: str
-    confidence: Literal["low", "medium", "high"]
-
-
-class CitationLocator(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    source_id: str
-    document_name: str
-    page: int | None = None
-    excerpt: str
-
-
-class ProposedClaimAssessment(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    claim_id: str
-    claim: str
-    status: Literal["verified", "partially_supported", "unsupported", "contradicted"]
-    citations: list[CitationLocator] = Field(default_factory=list)
-    calculation_ref: str | None = None
-    claimed_value: float | None = None
-    rationale: str
-
-
-class EvidenceVerificationResult(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    assessments: list[ProposedClaimAssessment]
-    unresolved_questions: list[str] = Field(default_factory=list)
-
-
-class ChatAnswer(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    answer: str
-    citations: list[str] = Field(default_factory=list)
-    unsupported: bool = False
-    missing_information: list[str] = Field(default_factory=list)
-
-
 class DCFInputs(BaseModel):
     model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
     base_revenue: float
@@ -177,6 +85,10 @@ class DCFInputs(BaseModel):
     nwc_pct_revenue: list[float] = Field(min_length=1, max_length=20)
     wacc: float
     terminal_growth: float
+    terminal_method: Literal["growth", "exit_multiple"] = "growth"
+    exit_multiple: float = Field(default=10, gt=0)
+    opening_nwc: float | None = None
+    tax_loss_benefit: bool = False
     cash: float = 0.0
     debt: float = 0.0
     minority_interest: float = 0.0

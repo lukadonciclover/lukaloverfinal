@@ -211,6 +211,7 @@ export interface WorkflowState {
 }
 
 export interface Workspace {
+  valuationWorkbench?: import("./workbench").WorkbenchSettings;
   version: 2;
   revision: number;
   company: Company;

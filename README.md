@@ -1,236 +1,104 @@
-# EquityLens AI
+# Equity Lens
 
-EquityLens AI is a Vercel-compatible investment research platform with a Next.js frontend and a stateless FastAPI backend. It preserves the original deterministic Python financial engine while replacing the Streamlit runtime, local SQLite cloud assumptions, and local-only UI.
+A dedicated financial modeling and equity valuation workbench. Built on the existing Next.js, React, Tailwind, Recharts and FastAPI application. Calculations are deterministic Python; no LLM, market-data service or investment recommendation engine is used.
 
-All built-in company data is explicitly synthetic. EquityLens is research software, not investment advice.
+## Run locally
 
-## Architecture
+Requirements: Node.js 24 and Python 3.12?3.14.
 
-```text
-Browser
-  -> Next.js 16 / React 19 / TypeScript / Tailwind / Recharts
-  -> same-origin /api/backend/* proxy
-  -> FastAPI on Vercel Python runtime
-  -> existing deterministic EquityLens Python modules
-```
-
-The repository is configured as **one Vercel Services project** with two independently built service roots:
-
-- Public `frontend/` service: Next.js
-- Private `backend/` service: FastAPI and the deterministic Python engine
-
-The browser calls only the Next.js origin. `frontend/app/api/backend/[...path]/route.ts` forwards allowlisted requests over a private service binding. Vercel generates the server-only `BACKEND_URL` for every local, preview, and production deployment.
-
-## Features
-
-- Ten working research modules: dashboard, workspace, financial analysis, valuation, agents, thesis, chat, reports, prompt lab, and settings
-- Responsive terminal-style dark interface with collapsible navigation
-- Multiple isolated browser-local company projects with create, rename, duplicate, switch, archive/restore, project export/import, IndexedDB storage, and localStorage fallback
-- Optional ten-step New Investment Analysis workflow with artifact-based progress and persistent back/forward navigation
-- PDF, CSV, and XLSX processing with source pages and review suggestions
-- Editable historical financial statements and data-origin labels
-- Python-calculated ratios that preserve missing values
-- Five-year DCF with bear/base/bull scenarios and sensitivity matrix
-- Comparable-company multiples with invalid denominator exclusion
-- Four research agents plus an Evidence Verification Agent, with schema validation, source IDs, provenance, and stale-input fingerprints
-- Grounded research-chat prompt preparation and manual response validation
-- Deterministic investment thesis fallback
-- DOCX, PDF, and XLSX report generation
-- Prompt strategy comparison with objective and human-review metrics separated
-- Deterministic claim checks for exact excerpts, source locators, and calculation reconciliation
-- Persisted financial-analysis, thesis, and report manifests tied to dependency fingerprints; stale artifacts are hidden or excluded
-- Optional external OpenAI-compatible inference only when the backend operator configures it
-- No paid API, AI subscription, database, or object-storage service required
-
-## Reused Python Engine
-
-The migration keeps these framework-independent modules as the calculation source of truth:
-
-| Module | Status |
-|---|---|
-| `backend/equitylens/financials.py` | Extended with scale normalization, capex-sign handling, and blocking consistency checks |
-| `backend/equitylens/valuation.py` | Extended with finite-input validation and resilient scenario handling |
-| `backend/equitylens/documents.py` | Extended extraction, chunk provenance, SHA-256 identifiers, suggestions, and BM25 retrieval |
-| `backend/equitylens/prompts.py` | Extended with the fifth agent, source IDs, versioning, and repeatable benchmark metrics |
-| `backend/equitylens/evidence.py` | Deterministic source-locator, exact-excerpt, and calculation reconciliation checks |
-| `backend/equitylens/reports.py` | Extended DOCX, PDF, and Excel generation with current DCF and evidence-review exports |
-| `backend/equitylens/thesis.py` | Transparent deterministic thesis generation with explicit statement classifications |
-| `backend/equitylens/models.py` | Tightened Pydantic domain, evidence, and agent schemas |
-| `backend/equitylens/db.py` | Retained only for legacy local tests; never instantiated by the Vercel API |
-| `backend/equitylens/ai.py` | JSON validation reused; local Ollama execution is not used in production |
-
-See `MIGRATION.md` for the detailed decision record.
-
-## Local Development
-
-Install Node.js 24, Python 3.12-3.14, and `uv`, then install each service's locked dependencies:
-
-```bash
-npm ci --prefix frontend
+```sh
 cd backend
-uv sync --locked
-cd ..
+uv sync --group dev
+uv run uvicorn app.main:app --reload --port 8000
 ```
 
-Run both services and their generated binding from the repository root:
+In a second terminal:
 
-```bash
-npx vercel dev -L
+```sh
+cd frontend
+npm ci
 ```
 
-Open the URL printed by Vercel CLI. The `-L` flag uses only local configuration and does not require Vercel authentication. For independent service development, run `uv run uvicorn app.main:app --reload --port 8000` from `backend/`, set `BACKEND_URL=http://localhost:8000` in `frontend/.env.local`, and run `npm run dev` from `frontend/`.
+Set `BACKEND_URL=http://127.0.0.1:8000` in `frontend/.env.local`, then run `npm run dev`. The frontend proxies requests to the stateless backend. Existing deployment configuration has not been changed; nothing is automatically deployed.
 
-## API Surface
+## Workflow
 
-| Endpoint | Purpose |
-|---|---|
-| `GET /health` | Runtime and optional inference status |
-| `GET /v1/demo` | Synthetic stateless demo data |
-| `POST /v1/financials/analyze` | Historical ratios and quality checks |
-| `POST /v1/valuation/dcf` | DCF, scenarios, and sensitivity |
-| `POST /v1/valuation/comparables` | Peer multiples and statistics |
-| `POST /v1/documents/process` | In-memory PDF/CSV/XLSX extraction |
-| `POST /v1/retrieval/search` | Local BM25 evidence retrieval |
-| `POST /v1/prompts/agent` | Specialized agent prompt generation |
-| `POST /v1/ai/validate` | Manual agent JSON validation |
-| `POST /v1/chat/prompt` | Grounded research-chat prompt generation |
-| `POST /v1/chat/validate` | Manual chat response validation |
-| `GET /v1/prompts/benchmarks` | Repeatable prompt benchmark definitions |
-| `POST /v1/prompts/strategy` | Prompt-strategy generation |
-| `POST /v1/prompts/evaluate` | Objective benchmark checks |
-| `POST /v1/evidence/verify` | Deterministic claim locator, excerpt, and calculation checks |
-| `POST /v1/thesis` | Deterministic classified thesis |
-| `POST /v1/reports/{docx,pdf,xlsx}` | Downloadable report generation |
-| `POST /v1/inference/generate` | Disabled unless external inference is configured |
+1. **Dashboard**: create a company valuation project or reopen an existing project using the compact selector.
+2. **Financial Data**: enter company metadata, upload PDF/CSV/XLSX statements, and maintain the financial ledger. Review and correct extraction suggestions, then explicitly approve the period, currency and scale. Suggestions never enter calculations before approval.
+3. **Financial Analysis**: examine historical tables, growth/CAGR, margins, returns, leverage, cash conversion, working capital and cash-flow charts. Missing observations remain unavailable.
+4. **Forecasting**: enable a 3-, 5- or 10-year integrated forecast. Supply opening balances and edit operating, reinvestment, debt, interest, dividend and cash assumptions. Actual and forecast tables remain separate.
+5. **Valuation Models**: independently enable DCF, trading comparables, precedent transactions, DDM or adjusted net assets. Use explicit equity-bridge inputs and actual diluted share counts. WACC can be entered manually or calculated from CAPM and market capital weights.
+6. **Results & Export**: compare model values, football-field ranges, scenarios and sensitivity grids. Download a formula-linked XLSX or a portable JSON project backup.
 
-All arithmetic runs in Python. An LLM never calculates DCF outputs, ratios, scenarios, or sensitivity values.
+All model assumptions are editable. Preset rates are labeled assumptions, not extracted company facts. No model is enabled by default in a new project. Changes immediately hide old results and trigger a debounced recalculation; late responses cannot overwrite current results.
 
-## Storage and Privacy
+## Data conventions
 
-The basic deployment is stateless:
+Historical ledger values retain their original currency, fiscal period, unit scale, source document/page and source excerpt. Analysis normalizes mixed scales; workbench calculations and charts use actual currency units. A value of 100 with scale 1,000 means 100,000. Share counts are actual shares, not thousands or millions. Cross-currency inputs are rejected: convert values consistently yourself and retain the conversion basis in notes.
 
-- The project portfolio is stored primarily in browser IndexedDB, with a capacity-limited `localStorage` fallback.
-- The active project can be exported; imports create a separate isolated project rather than replacing another company.
-- Uploaded bytes are processed in memory and discarded after each response.
-- Extracted document text remains in browser memory only by default.
-- Persisting extracted text, excerpts, source-bearing agent packets, or research chat requires explicit consent in Settings.
-- When retention is off, persistent copies and exports redact document chunks, excerpts, source-bearing agent output, claim checks, and chat.
-- SQLite is not used by the FastAPI application.
-- `backend/app/storage.py` defines the durable database/object-storage protocol for an optional future provider.
+Recommended long-form CSV / Excel columns:
 
-Do not enable browser document-text persistence on shared machines or where policy prohibits browser storage. IndexedDB remains local browser storage, not a durable or regulated system of record.
-
-## Document Limits
-
-Synchronous serverless processing is intentionally bounded:
-
-- Maximum upload: 4 MB, leaving multipart overhead below Vercel's 4.5 MB function payload limit
-- Maximum PDF length: 100 pages
-- Supported production uploads: PDF, CSV, XLSX
-- Maximum returned searchable chunks: 250
-- Maximum returned figure suggestions: 500
-- Maximum returned table previews: 20
-
-Files exceeding these limits must be split before upload. A production system requiring large filings should use consent-aware object storage plus a queued worker; serverless requests should not pretend to provide reliable long-running document jobs.
-
-Scanned PDFs are detected by low text density, but OCR is not bundled. Convert scans to searchable PDFs first.
-
-## AI Modes
-
-### Manual AI Mode
-
-Default and credential-free:
-
-1. Select an agent or ask a research question.
-2. EquityLens retrieves available evidence and constructs the prompt.
-3. Copy the prompt to an external chat interface.
-4. Paste the returned JSON into EquityLens.
-5. FastAPI validates the exact agent schema.
-6. Valid output is labeled as a manual external import.
-
-### Financial Analytics Only
-
-Disables narrative inference while retaining all deterministic calculations, document processing, retrieval, and exports.
-
-### Configured External Inference
-
-Optional and disabled by default. Configure an OpenAI-compatible endpoint only when required:
-
-```text
-INFERENCE_URL=https://your-inference-host.example/v1/chat/completions
-INFERENCE_MODEL=your-model
-INFERENCE_TOKEN=optional-token
+```csv
+metric,period,value,currency,unit_scale
+revenue,2024,100,USD,1000000
+revenue,2025,120,USD,1000000
+ebitda,2025,24,USD,1000000
 ```
 
-This mode does not require or assume a paid provider. `localhost` Ollama is not a production dependency.
+Wide tables with fiscal-year headers are also supported. PDFs use deterministic text/table extraction; scanned PDFs require external OCR. Extraction is conservative and may need manual correction. Undetected units start as an **unconfirmed suggestion** of 1: the approval dialog requires confirmation against the source. Upload limits remain 4 MB and 100 PDF pages.
 
-## Tests and Build
+Supported ledger metrics cover revenue, COGS, gross profit, operating expenses, EBITDA, depreciation/amortization, EBIT, interest, taxes, net income, cash, receivables, inventory, current assets/liabilities, PP&E, total assets/liabilities, payables, short/long-term debt, equity, NWC, operating/investing/financing cash flow, capex, FCF and changes in working capital.
 
-```bash
-# Python domain and API integration tests
+Peer/transaction CSV and Excel imports require `company,currency,unit_scale`; optional columns are `market_cap,enterprise_value,debt,cash,revenue,ebitda,ebit,net_income,book_equity,acquisition_date`. Imported rows are unselected until reviewed. Transactions require an acquisition date. Multiples with missing or non-positive denominators are excluded. Trading and transaction pools are never combined.
+
+## Modeling conventions
+
+- Forecast revenue grows from the latest approved annual revenue. Gross margin sets gross profit; either EBITDA margin or an explicit opex/revenue override sets operating expenses. D&A, capex and NWC use revenue ratios.
+- Opening forecast requirements: revenue, cash, total assets/liabilities/equity, short- and long-term debt, net working capital and PP&E. Opening assets must equal liabilities plus equity.
+- NWC represents net operating assets. Other assets and non-debt liabilities remain constant. Debt changes by the explicit net-borrowing assumption and disclosed year-end revolver draws. Interest uses opening debt. Dividends reduce cash and equity. With financing disabled, a cash shortfall blocks the forecast. The balance check should remain zero.
+- FCFF = EBIT minus cash taxes on operating profit + D&A ? capex ? change in NWC. By default, operating losses do not create immediate tax benefits. Integrated DCF assumptions link to the forecast; standalone DCF allows annual overrides. Blank standalone opening NWC explicitly uses base revenue ? first-year NWC ratio.
+- DCF uses year-end discounting. Terminal value is either final FCFF ? (1+g)/(WACC?g), or final EBITDA ? exit multiple, discounted from the last forecast year. Growth must be below positive WACC. EV converts to equity through cash ? debt ? minority interest + non-operating assets. Negative FCFF/equity values are preserved; missing shares leave per-share results unavailable.
+- WACC uses CAPM cost of equity and after-tax debt cost with market equity/debt weights. DDM uses cost of equity, with Gordon or a high-growth dividend stage followed by perpetual growth. Asset valuation distinguishes book equity from adjusted NAV.
+- Peer median/average/min/max statistics support six trading multiples and three EV transaction multiples. EV-based ranges require cash/debt bridge inputs. Ratios are invariant to scale only when each row uses a consistent scale across all monetary fields.
+- ROA/ROE use average assets/equity. ROIC uses ending invested capital (debt + equity ? cash) and a usable historical tax rate inferred from tax expense / pretax income. Growth with a non-positive prior value is unavailable. Net debt is interest-bearing debt less cash. Capex cash outflows normalize to positive amounts.
+- Bear/base/bull adjustments and all three sensitivity grids call the same DCF engine. Invalid cells remain unavailable. Scenarios express assumption differences, not probabilities. Multiples ranges reflect selected observations, not confidence intervals. Valuation methods have distinct economic bases and should not be treated as interchangeable.
+
+The FCFF/WACC and dividend-discount conventions follow [Damodaran's valuation notes](https://pages.stern.nyu.edu/~adamodar/New_Home_Page/lectures/val.html). Loss-tax treatment and financing policies are explicit simplifying assumptions of this application.
+
+## Excel model
+
+The workbook includes historical statements/sources, forecast assumptions, projected statements, WACC, DCF, peers, transactions, DDM, adjusted assets, scenarios, sensitivity tables and a valuation summary. Inapplicable models are marked not completed. Shared equity-bridge inputs feed every relevant valuation. Formulas are live: changing operating rates, WACC, model assumptions or peer inputs recalculates dependent values in compatible Excel applications. Source strings are escaped to prevent formula injection.
+
+Blue = hardcoded numeric assumptions; black = formulas within a sheet; green = cross-sheet formulas. Hidden sensitivity schedules are auditable by unhiding their tabs. All formulas are acyclic. The exported forecast horizon is fixed to the selected number of years; re-export to change its length. DDM horizons can change within the exported ten-year schedule. Structural changes such as adding new historical metrics or peer rows should be made in the application and re-exported. Excel is configured to recalculate on opening; viewers without calculation support may show blank formula caches.
+
+Tests evaluate the generated formulas independently with the `formulas` package and reconcile DCF, WACC, DDM, assets, peer/transaction valuations, all scenarios/sensitivities and balance checks. They also modify an exported growth assumption and verify recalculation against the application.
+
+## Architecture and storage
+
+- `frontend/components/pages/workbench.tsx`: forecast, model, dashboard and result screens.
+- `frontend/components/pages/financials.tsx` and `workspace.tsx`: reused ledger, review, upload, project and historical analysis UI.
+- `frontend/lib/workbench.ts`: typed assumptions and API payload construction.
+- `frontend/lib/workspace.tsx`, `storage.ts`: existing version-2 project persistence, migration and JSON backup.
+- `backend/equitylens/financials.py`, `valuation.py`: retained and extended financial calculations.
+- `backend/equitylens/workbench.py`: validated model inputs, forecast statements, normalization, models, scenarios and sensitivities.
+- `backend/equitylens/workbook.py`: live Excel model generation.
+- `backend/equitylens/documents.py`: deterministic extraction and source locators.
+- `backend/app/main.py`: stateless document, analysis, valuation and export endpoints.
+
+New API endpoints: `POST /v1/workbench/calculate`, `/v1/workbench/export`, and `/v1/workbench/import-peers`. Document processing and historical analysis APIs remain available. Removed research, chat, prompt, evidence-scoring, thesis, inference and research-report endpoints return 404.
+
+Projects remain browser-local. Source-text retention is opt-in in Financial Data. Portable project JSON backups retain old workspace fields for compatibility, but those fields do not drive new calculations. The legacy SQLite repository/schema is preserved; no production database structures or data are deleted. See [MIGRATION.md](MIGRATION.md).
+
+## Validation
+
+```sh
 cd backend
 uv run pytest
-cd ..
-
-# Frontend type checks and component tests
-npm run check --prefix frontend
-
-# Production Next.js build
-npm run build --prefix frontend
-
-# Dependency audit
-npm audit --prefix frontend --audit-level=moderate
+cd ../frontend
+npm run check
+npm run build
 ```
 
-The suite does not require internet access, AI credentials, Ollama, a cloud database, or uploaded fixtures. See `AUDIT.md` for the page-by-page audit, verification matrix, and residual limitations.
+The full suite covers missing inputs, non-positive denominators, currency/scale mismatches, losses, negative equity, missing shares, forecast horizons, optional models, source review, API integration, formula reconciliation, persistence and stale UI results. Tests for retired workflows were replaced with valuation workflow tests.
 
-## Vercel Deployment
-
-The root `vercel.json` builds and deploys both services together. Keep the Vercel project Root Directory at the repository root and select the **Services** framework preset. Do not set build or output-directory overrides.
-
-For the existing `lukaloverfinal` project:
-
-1. Open **Settings > Build and Deployment**.
-2. Set **Framework Preset** to **Services**.
-3. Keep **Root Directory** empty so it resolves to the repository root.
-4. Remove any manually configured `BACKEND_URL`; the `frontend` service binding generates it per deployment.
-5. Keep `lukaloverfinal.vercel.app` assigned to this same project.
-6. Redeploy the latest commit.
-
-The equivalent authenticated CLI flow is:
-
-```bash
-vercel link
-vercel project update --framework services
-vercel deploy
-vercel curl /api/backend/health --deployment YOUR_PREVIEW_URL
-vercel deploy --prod
-vercel curl /api/backend/health
-```
-
-Expected production checks:
-
-```text
-https://lukaloverfinal.vercel.app/                    -> EquityLens HTML dashboard
-https://lukaloverfinal.vercel.app/dashboard           -> EquityLens HTML dashboard
-https://lukaloverfinal.vercel.app/research            -> AI research agents
-https://lukaloverfinal.vercel.app/prompts             -> Prompt engineering lab
-https://lukaloverfinal.vercel.app/api/backend/health -> FastAPI health JSON through Next.js
-```
-
-The backend has no top-level public rewrite and is reachable only through the frontend binding. CORS does not affect normal dashboard requests because the browser calls the same-origin Next.js proxy.
-
-## Why the Original Error Is Resolved
-
-The root Streamlit `app.py` has been removed. Vercel Services now builds the public Next.js service from `frontend/` and imports `app.main:app` only inside the private `backend/` service. The project root can no longer be misdetected as a standalone FastAPI deployment.
-
-## Limitations
-
-- No authentication is included because the basic deployment stores isolated company projects in one browser rather than on a shared server.
-- Browser IndexedDB/localStorage is not a substitute for regulated document management.
-- Currency conversion and market data remain manual to avoid hidden external dependencies.
-- Lexical BM25 retrieval can miss passages using unrelated terminology.
-- PDF table extraction varies by filing format and always requires analyst review.
-- Deterministic excerpt checks establish locator and text overlap, not full semantic entailment; consequential claims still require analyst review.
-- Schema-valid AI output can still be factually wrong; the Evidence Verification Agent and human source review remain mandatory.
-- Automated prompt scores do not grade interpretive quality or citation entailment.
+Visual browser verification requires a connected browser; this implementation session had none. Component tests and live HTTP checks through the Next.js proxy were executed. No production deployment was performed.

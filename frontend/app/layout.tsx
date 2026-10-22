@@ -4,7 +4,7 @@ import { AppShell } from "@/components/app-shell";
 import { WorkspaceProvider } from "@/lib/workspace";
 
 export const metadata: Metadata = {
-  title: "EquityLens AI",
+  title: "EquityLens | Valuation Workbench",
   description: "Source-grounded financial analysis and reproducible valuation"
 };
 

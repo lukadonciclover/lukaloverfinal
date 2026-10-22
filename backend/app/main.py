@@ -10,27 +10,11 @@ from typing import Any, Literal
 
 import pandas as pd
 import pymupdf
-import requests
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 
-from app.schemas import (
-    AgentPromptRequest,
-    AgentValidationRequest,
-    ChatPromptRequest,
-    ChatValidationRequest,
-    ComparablesRequest,
-    EvidenceVerificationRequest,
-    FinancialAnalysisRequest,
-    InferenceRequest,
-    ReportRequest,
-    RetrievalRequest,
-    StrategyEvaluationRequest,
-    StrategyPromptRequest,
-    ThesisRequest,
-)
-from equitylens.ai import build_chat_prompt, parse_json_output
+from app.schemas import ComparablesRequest, FinancialAnalysisRequest, RetrievalRequest
 from equitylens.documents import (
     chunk_pages,
     classify_document,
@@ -40,22 +24,11 @@ from equitylens.documents import (
     search_chunks,
     suggest_financial_figures,
 )
-from equitylens.evidence import verify_claims
 from equitylens.financials import FORMULAS, analysis_table, data_quality_issues, figures_to_frame, periods_to_metrics
-from equitylens.models import ChatAnswer, DCFInputs
-from equitylens.prompts import (
-    AGENT_PROMPT_VERSION,
-    AGENT_SCHEMAS,
-    BENCHMARK_VERSION,
-    STRATEGIES,
-    build_agent_prompt,
-    build_strategy_prompt,
-    evaluate_output,
-    known_answer_tasks,
-)
-from equitylens.reports import generate_docx, generate_excel, generate_pdf
+from equitylens.models import DCFInputs
+from equitylens.workbench import Workbench, Peer, evaluate
+from equitylens.workbook import export_workbench
 from equitylens.sample import synthetic_company, synthetic_figures
-from equitylens.thesis import generate_deterministic_thesis
 from equitylens.valuation import (
     calculate_dcf,
     calculate_multiples,
@@ -71,7 +44,7 @@ MAX_RETURNED_CHUNKS = 250
 ALLOWED_SUFFIXES = {".pdf", ".csv", ".xlsx"}
 
 app = FastAPI(
-    title="EquityLens AI API",
+    title="EquityLens Valuation API",
     version="1.0.0",
     description="Stateless deterministic financial analytics and document-processing API.",
 )
@@ -88,7 +61,7 @@ app.add_middleware(
 
 @app.get("/")
 def root() -> dict[str, str]:
-    return {"service": "EquityLens AI API", "status": "ready", "persistence": "stateless"}
+    return {"service": "EquityLens Valuation API", "status": "ready", "persistence": "stateless"}
 
 
 @app.get("/health")
@@ -96,8 +69,7 @@ def health() -> dict[str, Any]:
     return {
         "status": "ok",
         "service": "equitylens-api",
-        "manual_ai_default": True,
-        "inference_configured": bool(os.getenv("INFERENCE_URL")),
+        "calculation_engine": "deterministic",
     }
 
 
@@ -115,7 +87,7 @@ def demo_workspace() -> dict[str, Any]:
 @app.post("/v1/financials/analyze")
 def analyze_financials(payload: FinancialAnalysisRequest) -> dict[str, Any]:
     issues = data_quality_issues(payload.figures)
-    blocking = [issue for issue in issues if issue.startswith(("Currency mismatch", "Duplicate figure", "Annual and quarterly"))]
+    blocking = [issue for issue in issues if issue.startswith(("Currency mismatch", "Duplicate figure", "Annual and quarterly", "Unrecognized"))]
     if blocking:
         raise HTTPException(status_code=422, detail=" ".join(blocking))
     table = analysis_table(payload.figures)
@@ -215,210 +187,6 @@ def retrieve_evidence(payload: RetrievalRequest) -> dict[str, Any]:
     return {"results": search_chunks(payload.query, [chunk.model_dump() for chunk in payload.chunks], payload.limit)}
 
 
-@app.post("/v1/prompts/agent")
-def prepare_agent_prompt(payload: AgentPromptRequest) -> dict[str, Any]:
-    evidence = [chunk.model_dump() for chunk in payload.evidence]
-    prompt = build_agent_prompt(
-        payload.agent_name,
-        evidence,
-        payload.verified_financials,
-        payload.valuation_results,
-        payload.prior_outputs,
-        payload.assumptions,
-    )
-    return {
-        "agent_name": payload.agent_name,
-        "prompt": prompt,
-        "schema": AGENT_SCHEMAS[payload.agent_name].model_json_schema(),
-        "prompt_version": AGENT_PROMPT_VERSION,
-        "prompt_hash": artifact_hash(prompt),
-        "input_hash": payload.client_input_hash or artifact_hash(payload.model_dump(exclude={"client_input_hash"})),
-        "source_ids": [chunk["chunk_id"] for chunk in evidence],
-        "assumptions": payload.assumptions,
-    }
-
-
-@app.post("/v1/ai/validate")
-def validate_agent_response(payload: AgentValidationRequest) -> dict[str, Any]:
-    parsed, errors = parse_json_output(payload.raw_output, AGENT_SCHEMAS[payload.agent_name])
-    return {
-        "valid": parsed is not None,
-        "schema_valid": parsed is not None,
-        "parsed_output": parsed,
-        "errors": errors,
-        "provenance": f"External model response manually imported by the user: {payload.model_id}",
-        "prompt_hash": payload.prompt_hash,
-        "input_hash": payload.input_hash,
-        "prompt_version": payload.prompt_version,
-    }
-
-
-@app.post("/v1/chat/prompt")
-def prepare_chat_prompt(payload: ChatPromptRequest) -> dict[str, str]:
-    return {"prompt": build_chat_prompt(payload.question, [chunk.model_dump() for chunk in payload.evidence], json.dumps(payload.calculation_context, indent=2))}
-
-
-@app.post("/v1/chat/validate")
-def validate_chat_response(payload: ChatValidationRequest) -> dict[str, Any]:
-    parsed, errors = parse_json_output(payload.raw_output, ChatAnswer)
-    if parsed is not None:
-        citations = parsed.get("citations", [])
-        allowed = [chunk.model_dump() for chunk in payload.evidence]
-        allowed_citations = {f"{chunk['document_name']}, page {chunk['page']}".casefold() for chunk in allowed}
-        invalid = [citation for citation in citations if citation.strip().casefold() not in allowed_citations]
-        if invalid:
-            errors.append("Citations outside the retrieved source set: " + "; ".join(invalid))
-        if not citations and not parsed.get("unsupported"):
-            errors.append("A supported answer must cite a retrieved document and page, or set unsupported=true.")
-        if errors:
-            parsed = None
-    return {"valid": parsed is not None, "parsed_output": parsed, "errors": errors, "provenance": "Manual import with citation allowlist validation"}
-
-
-@app.get("/v1/prompts/benchmarks")
-def prompt_benchmarks() -> dict[str, Any]:
-    return {"version": BENCHMARK_VERSION, "strategies": STRATEGIES, "tasks": known_answer_tasks()}
-
-
-@app.post("/v1/prompts/strategy")
-def prepare_strategy_prompt(payload: StrategyPromptRequest) -> dict[str, str]:
-    try:
-        prompt = build_strategy_prompt(payload.strategy, payload.task, payload.context)
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-    return {"prompt": prompt}
-
-
-@app.post("/v1/prompts/evaluate")
-def evaluate_strategy(payload: StrategyEvaluationRequest) -> dict[str, Any]:
-    tasks = known_answer_tasks()
-    if payload.task_name not in tasks:
-        raise HTTPException(status_code=422, detail="Unknown benchmark task.")
-    metrics = evaluate_output(payload.output, tasks[payload.task_name], payload.require_json)
-    return {
-        "objective_metrics": metrics,
-        "benchmark_version": tasks[payload.task_name].get("version", BENCHMARK_VERSION),
-        "prompt_version": payload.prompt_version,
-        "model_id": payload.model_id,
-        "human_judgments": {"rating": None, "notes": "Interpretive quality and citation entailment were not automatically scored."},
-    }
-
-
-@app.post("/v1/evidence/verify")
-def verify_evidence(payload: EvidenceVerificationRequest) -> dict[str, Any]:
-    assessments = verify_claims(payload.assessments, [chunk.model_dump() for chunk in payload.evidence], payload.calculation_context)
-    counts = {status: sum(item["status"] == status for item in assessments) for status in ("verified", "partially_supported", "unsupported", "contradicted")}
-    return {"assessments": assessments, "counts": counts, "verification_version": "evidence-v1.0"}
-
-
-@app.post("/v1/thesis")
-def build_thesis(payload: ThesisRequest) -> dict[str, Any]:
-    blocking = blocking_financial_issues(payload.figures, payload.company.currency)
-    if blocking:
-        raise HTTPException(status_code=422, detail=" ".join(blocking))
-    return {
-        "sections": generate_deterministic_thesis(
-            payload.company,
-            periods_to_metrics(payload.figures),
-            payload.valuation,
-            payload.agent_outputs,
-        )
-    }
-
-
-@app.post("/v1/reports/{report_format}")
-def generate_report(report_format: Literal["docx", "pdf", "xlsx"], payload: ReportRequest) -> StreamingResponse:
-    blocking = blocking_financial_issues(payload.figures, payload.company.currency)
-    if blocking:
-        raise HTTPException(status_code=422, detail=" ".join(blocking))
-    valuation = payload.valuation
-    calculated = None
-    if payload.dcf_inputs is not None:
-        try:
-            calculated = calculate_dcf(payload.dcf_inputs)
-            valuation = dcf_result_json(calculated)
-        except ValueError as exc:
-            raise HTTPException(status_code=422, detail=str(exc)) from exc
-    thesis = generate_deterministic_thesis(
-        payload.company,
-        periods_to_metrics(payload.figures),
-        valuation,
-        payload.agent_outputs,
-    )
-    thesis = {heading: list(items) for heading, items in thesis.items()}
-    if payload.claim_assessments:
-        thesis["Evidence review"] = [
-            {
-                "classification": f"Workspace evidence status: {assessment.status.replace('_', ' ')}",
-                "text": f"{assessment.claim} Review rationale: {assessment.rationale} Checks: {' | '.join(assessment.checks) or 'none recorded'}. Calculation value: {assessment.calculation_value if assessment.calculation_value is not None else 'none'}. Human review required: {'yes' if assessment.human_review_required else 'no'}. Citations: " + (" | ".join(f"[{citation.source_id}] {citation.document_name}, page {citation.page}: {citation.excerpt}" for citation in assessment.citations) or "none"),
-            }
-            for assessment in payload.claim_assessments
-        ]
-    frame = figures_to_frame(payload.figures)
-    filename = safe_filename(payload.company.name)
-    if report_format == "docx":
-        content = generate_docx(payload.company, thesis, frame, valuation)
-        return download(content, f"{filename}-research.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document")
-    if report_format == "pdf":
-        content = generate_pdf(payload.company, thesis, valuation)
-        return download(content, f"{filename}-research.pdf", "application/pdf")
-    assumptions = pd.DataFrame()
-    forecast = pd.DataFrame()
-    if payload.dcf_inputs is not None:
-        inputs = payload.dcf_inputs
-        assumptions = pd.DataFrame(
-            {
-                "year": range(1, len(inputs.revenue_growth) + 1),
-                "revenue_growth": inputs.revenue_growth,
-                "ebit_margin": inputs.ebit_margin,
-                "tax_rate": inputs.tax_rate,
-                "depreciation_pct_revenue": inputs.depreciation_pct_revenue,
-                "capex_pct_revenue": inputs.capex_pct_revenue,
-                "nwc_pct_revenue": inputs.nwc_pct_revenue,
-            }
-        )
-        forecast = calculated.forecast if calculated is not None else pd.DataFrame()
-    content = generate_excel(
-        payload.company,
-        frame,
-        assumptions,
-        forecast,
-        valuation,
-        [assessment.model_dump(mode="json") for assessment in payload.claim_assessments],
-    )
-    return download(content, f"{filename}-valuation.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-
-
-@app.post("/v1/inference/generate")
-def configured_inference(payload: InferenceRequest) -> dict[str, Any]:
-    """Optional OpenAI-compatible inference. It is disabled unless server operators configure it."""
-    url = os.getenv("INFERENCE_URL")
-    model = os.getenv("INFERENCE_MODEL")
-    if not url or not model:
-        raise HTTPException(status_code=503, detail="External inference is not configured. Use Manual AI Mode.")
-    headers = {"Content-Type": "application/json"}
-    token = os.getenv("INFERENCE_TOKEN")
-    if token:
-        headers["Authorization"] = f"Bearer {token}"
-    try:
-        response = requests.post(
-            url,
-            headers=headers,
-            json={
-                "model": model,
-                "messages": [{"role": "user", "content": payload.prompt}],
-                "response_format": {"type": "json_object"} if payload.json_mode else None,
-            },
-            timeout=45,
-        )
-        response.raise_for_status()
-        body = response.json()
-        output = body["choices"][0]["message"]["content"]
-    except (requests.RequestException, KeyError, IndexError, ValueError) as exc:
-        raise HTTPException(status_code=502, detail="The configured inference service failed to return a valid response.") from exc
-    return {"output": output, "model": model, "provenance": "Configured external inference service"}
-
-
 def dcf_result_json(result: Any) -> dict[str, Any]:
     return {
         "forecast": dataframe_records(result.forecast.reset_index()),
@@ -460,18 +228,39 @@ def download(content: bytes, filename: str, media_type: str) -> StreamingRespons
     )
 
 
-def artifact_hash(value: Any) -> str:
-    serialized = json.dumps(value, sort_keys=True, separators=(",", ":"), default=str)
-    return hashlib.sha256(serialized.encode()).hexdigest()
+@app.post("/v1/workbench/calculate")
+def calculate_workbench(payload: Workbench):
+    try:
+        return evaluate(payload)
+    except (ValueError, OverflowError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+@app.post("/v1/workbench/export")
+def export_model(payload: Workbench):
+    try:
+        content = export_workbench(payload)
+    except (ValueError, OverflowError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return download(content, "equitylens-valuation.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
 
-def blocking_financial_issues(figures: list[Any], company_currency: str) -> list[str]:
-    issues = [
-        issue
-        for issue in data_quality_issues(figures)
-        if issue.startswith(("Currency mismatch", "Duplicate figure", "Annual and quarterly"))
-    ]
-    figure_currencies = {figure.currency for figure in figures}
-    if figure_currencies and figure_currencies != {company_currency}:
-        issues.append(f"Figure currency must match company currency {company_currency}.")
-    return issues
+@app.post("/v1/workbench/import-peers")
+async def import_peers(file: UploadFile = File(...)):
+    suffix = Path(file.filename or "").suffix.lower()
+    if suffix not in {".csv", ".xlsx"}:
+        raise HTTPException(415, "Use CSV or XLSX peer data.")
+    content = await file.read(MAX_UPLOAD_BYTES + 1)
+    await file.close()
+    if len(content) > MAX_UPLOAD_BYTES:
+        raise HTTPException(413, "File exceeds 4 MB.")
+    try:
+        frame = pd.read_csv(BytesIO(content)) if suffix == ".csv" else pd.read_excel(BytesIO(content))
+        frame.columns = [str(c).strip().lower().replace(" ", "_") for c in frame.columns]
+        if not {"company", "currency", "unit_scale"}.issubset(frame.columns):
+            raise ValueError("Required columns: company, currency, unit_scale. Monetary scales cannot be inferred.")
+        if len(frame) > 500:
+            raise ValueError("Maximum 500 rows per import.")
+        rows = json.loads(frame.to_json(orient="records", date_format="iso"))
+        return {"rows": [Peer.model_validate({**r, "selected": False, "acquisition_date": str(r.get("acquisition_date") or "")[:10]}).model_dump() for r in rows]}
+    except (ValueError, TypeError) as exc:
+        raise HTTPException(422, str(exc)) from exc

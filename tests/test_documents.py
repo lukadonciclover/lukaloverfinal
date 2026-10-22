@@ -42,3 +42,10 @@ def test_csv_suggestions_preserve_quarterly_periods():
         ("2024-Q1", 120),
         ("2024-Q2", 135),
     ]
+def test_wide_year_headers_and_long_form_explicit_units():
+    from equitylens.documents import suggest_financial_figures
+    wide = suggest_financial_figures([{"page":1,"text":"metric,2024,2025\nRevenue,100,120\nEBITDA,20,24"}])
+    assert [(r["period"],r["value"]) for r in wide if r["metric"]=="revenue"] == [("2024",100),("2025",120)]
+    rows = suggest_financial_figures([{"page":1,"text":"metric,period,value,currency,unit_scale\nRevenue,2025,120,EUR,1000000"}])
+    assert rows[0]["currency"] == "EUR"
+    assert rows[0]["unit_scale"] == 1000000

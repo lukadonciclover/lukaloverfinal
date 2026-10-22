@@ -1,5 +1,5 @@
 import { createDemoWorkspace } from "@/lib/demo";
-import { agentInputFingerprint, currentDcfResult, dcfFingerprint, isAgentRunStale, researchFingerprint, valuationFingerprint, workflowStatus } from "@/lib/research";
+import { currentDcfResult, dcfFingerprint, fingerprint, valuationFingerprint } from "@/lib/fingerprint";
 import { parseWorkspace, persistenceCopy } from "@/lib/workspace";
 import type { AgentRun } from "@/lib/types";
 
@@ -22,7 +22,7 @@ describe("workspace safety regressions", () => {
       chunks: [{ chunk_id: "source-1", page: 1, text: "Sensitive excerpt", document_name: "Report", document_identifier: "document-1", metadata: {} }],
       suggestions: [{ metric: "revenue", period: "2025", value: 10, currency: "USD", unit_scale: 1, page: 1, quote: "Sensitive quote", confidence: 0.8 }]
     }];
-    workspace.agentRuns = { "Financial Analyst": run("Financial Analyst", researchFingerprint(workspace)) };
+    workspace.agentRuns = { "Financial Analyst": run("Financial Analyst", fingerprint(workspace)) };
     workspace.claimAssessments = [{ claim_id: "c1", claim: "Sensitive claim", status: "verified", citations: [], rationale: "", checks: [], human_review_required: false }];
     workspace.chats = [{ id: "m1", role: "assistant", content: "Sensitive answer", citations: ["source-1"] }];
 
@@ -54,22 +54,7 @@ describe("workspace safety regressions", () => {
     expect(() => parseWorkspace(malformed)).toThrow(/financial figure is malformed/i);
   });
 
-  it("marks valuation and dependent agents stale after upstream inputs change", () => {
-    const workspace = createDemoWorkspace();
-    workspace.dcfInputHash = valuationFingerprint(workspace);
-    const financialHash = researchFingerprint(workspace);
-    workspace.agentRuns["Financial Analyst"] = run("Financial Analyst", financialHash);
-    const valuationHash = agentInputFingerprint(workspace, ["Financial Analyst"]);
-    workspace.agentRuns["Valuation Analyst"] = run("Valuation Analyst", valuationHash, { "Financial Analyst": "Financial Analyst-run" });
 
-    expect(isAgentRunStale(workspace.agentRuns["Financial Analyst"], workspace)).toBe(false);
-    expect(isAgentRunStale(workspace.agentRuns["Valuation Analyst"], workspace)).toBe(false);
-
-    workspace.dcfInputs = { ...workspace.dcfInputs, wacc: workspace.dcfInputs.wacc + 0.01 };
-    expect(workspace.dcfInputHash).not.toBe(valuationFingerprint(workspace));
-    expect(isAgentRunStale(workspace.agentRuns["Financial Analyst"], workspace)).toBe(true);
-    expect(isAgentRunStale(workspace.agentRuns["Valuation Analyst"], workspace)).toBe(true);
-  });
 
   it("keeps a DCF stale after ledger changes until assumptions are reconciled", () => {
     const workspace = createDemoWorkspace();
@@ -83,15 +68,5 @@ describe("workspace safety regressions", () => {
     expect(workspace.dcfCalculationHash).toBe(dcfFingerprint(workspace.dcfInputs));
   });
 
-  it("does not complete workflow steps merely because they were visited", () => {
-    const workspace = createDemoWorkspace();
-    workspace.figures = [];
-    workspace.documents = [];
-    workspace.dcfResult = null;
-    workspace.workflow = { active: true, current_step: 10 };
-    const steps = workflowStatus(workspace);
-    expect(steps).toHaveLength(10);
-    expect(steps[9].complete).toBe(false);
-    expect(steps.filter((step) => step.complete).map((step) => step.label)).toEqual(["Create or select company"]);
-  });
+
 });

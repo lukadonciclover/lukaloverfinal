@@ -7,9 +7,10 @@ vi.mock("next/navigation", () => ({ usePathname: () => "/" }));
 vi.mock("@/lib/storage", () => ({ loadIndexedWorkspace: vi.fn().mockResolvedValue(null), saveIndexedWorkspace: vi.fn(), deleteIndexedWorkspace: vi.fn() }));
 
 describe("application navigation", () => {
-  it("exposes all ten research modules", async () => {
+  it("exposes exactly six valuation modules", async () => {
     render(<WorkspaceProvider><AppShell><div>Content</div></AppShell></WorkspaceProvider>);
     await screen.findByText("Content");
+    expect(navigation).toHaveLength(6);
     for (const item of navigation) expect(screen.getByRole("link", { name: item.label })).toHaveAttribute("href", item.href);
   });
 
