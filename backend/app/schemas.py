@@ -18,6 +18,8 @@ class EvidenceChunkInput(BaseModel):
 
 
 class FinancialAnalysisRequest(BaseModel):
+    currency: str | None = None
+    history_window: Literal[2, 3, 5] = 3
     figures: list[FinancialFigure]
 
 

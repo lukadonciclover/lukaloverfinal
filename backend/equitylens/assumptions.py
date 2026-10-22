@@ -66,7 +66,8 @@ def period_info(text: str) -> tuple[str, str]:
     if re.search(r"long.term|terminal|perpetual", text, re.I):
         return "Long term", "long-term"
     if years:
-        return ("FY " if re.search(r"\bFY|fiscal", text, re.I) else "") + years[0], "annual"
+        prefix = "FY " if re.search(r"\bFY|fiscal", text, re.I) else "CY " if re.search(r"\bCY|calendar", text, re.I) else ""
+        return prefix + years[0], "annual"
     if re.search(r"next (?:fiscal |calendar )?year", text, re.I):
         return re.search(r"next (?:fiscal |calendar )?year", text, re.I)[0], "relative annual"
     return "Undated", "undated"
@@ -191,6 +192,7 @@ def extract_assumptions(pages: list[dict[str, Any]], document_id: str, name: str
                 value = minimum = maximum = None
             if metric in {"financial_outlook", "forecast_risk", "capital_allocation"}:
                 value = minimum = maximum = None
+            value, minimum, maximum = [v if v is None or math.isfinite(v) else None for v in (value, minimum, maximum)]
             identifier = hashlib.sha256(f"{document_id}:{page['page']}:{metric}:{line}".encode()).hexdigest()
             output.append(dict(id=identifier, metric=metric, value=value, minimum=minimum, maximum=maximum,
                 unit=unit, currency=currency, unit_scale=scale, period=period, basis=basis, scope=scope,
@@ -208,7 +210,7 @@ def derive_assumptions(figures: list, currency: str) -> list[dict[str, Any]]:
             grouped.setdefault((f.period, f.metric), []).append(f)
     values = {key: rows[0].value * rows[0].unit_scale for key, rows in grouped.items() if len(rows) == 1}
     output = []
-    ratios = {"gross_margin": "gross_profit", "ebitda_margin": "ebitda", "ebit_margin": "ebit", "capex_ratio": "capital_expenditure", "depreciation_ratio": "depreciation_amortization", "nwc_ratio": "net_working_capital", "tax_rate": "tax_expense"}
+    ratios = {"opex_ratio": "operating_expenses", "gross_margin": "gross_profit", "ebitda_margin": "ebitda", "ebit_margin": "ebit", "capex_ratio": "capital_expenditure", "depreciation_ratio": "depreciation_amortization", "nwc_ratio": "net_working_capital", "tax_rate": "tax_expense"}
     for period in sorted({p for p, _ in values}):
         for metric in ["revenue_growth", "dividend_growth", *ratios]:
             growth_metric = "revenue" if metric == "revenue_growth" else "dividend_per_share" if metric == "dividend_growth" else None
@@ -235,7 +237,7 @@ def derive_revenue_guidance(candidates: list[dict], figures: list, currency: str
     for a in candidates:
         if a.get("metric") != "revenue" or a.get("basis") != "annual" or a.get("scope") != "consolidated" or a.get("currency") != currency or a.get("classification") != "management guidance":
             continue
-        year = re.fullmatch(r"(?:FY )?((?:19|20)\d{2})", a.get("period", ""))
+        year = re.fullmatch(r"(?:(?:FY|CY) )?((?:19|20)\d{2})", a.get("period", ""))
         if not year:
             continue
         base = [f for f in figures if f.metric == "revenue" and f.period == str(int(year[1])-1) and f.currency == currency]

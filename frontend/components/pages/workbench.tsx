@@ -1,4 +1,6 @@
 "use client";
+import { HistoricalReferenceControls } from "@/components/historical-reference-controls";
+import { historicalLabel } from "@/lib/historical-references";
 import { assumptionExport } from "@/lib/assumptions";
 import { AssumptionShortcuts } from "@/components/assumption-shortcuts";
 import { CreateProjectForm } from "@/components/create-project-form";
@@ -100,10 +102,12 @@ function NumberInputs<T extends object>({
   values,
   change,
   omit = [],
+  group,
 }: {
   values: T;
   change: (key: keyof T, value: number | null) => void;
   omit?: string[];
+  group?: string;
 }) {
   const { workspace } = useWorkspace();
   return (
@@ -117,7 +121,7 @@ function NumberInputs<T extends object>({
           <Field
             key={k}
             label={label(k)}
-            hint={financialInputHint(k, workspace.company.currency)}
+            hint={(group && historicalLabel(workspace, `${group}.${k}`)) || financialInputHint(k, workspace.company.currency)}
             type="number"
             step="any"
             value={v ?? ""}
@@ -189,6 +193,7 @@ export function ForecastingPage() {
         title="Forecasting"
         description="Rates are decimals (0.05 = 5%). Monetary inputs and outputs use actual currency units."
       />
+      <HistoricalReferenceControls scope="forecast" />
       <Card>
         <label className="flex gap-3">
           <input
@@ -254,6 +259,7 @@ export function ForecastingPage() {
         </Link>
         <AssumptionShortcuts kind="forecast" />
         <NumberInputs
+          group="forecast"
           values={s.forecast}
           omit={["horizon"]}
           change={(k, v) =>
@@ -557,9 +563,11 @@ export function ModelsPage() {
       >
         Review document assumptions
       </Link>
+      <HistoricalReferenceControls scope="valuation" />
       <Card>
         <h2 className="mb-4">Equity bridge and market reference</h2>
         <NumberInputs
+          group="settings"
           values={{
             cash: s.cash,
             debt: s.debt,
@@ -651,6 +659,7 @@ export function ModelsPage() {
             {s.enabled.wacc && (
               <div className="mb-5">
                 <NumberInputs
+                  group="wacc"
                   values={s.wacc}
                   change={(k, v) =>
                     update((a) => ({ ...a, wacc: { ...a.wacc, [k]: v } }))
@@ -660,6 +669,7 @@ export function ModelsPage() {
               </div>
             )}
             <NumberInputs
+              group="dcf"
               omit={s.enabled.wacc ? ["wacc"] : []}
               values={{
                 wacc: workspace.dcfInputs.wacc,
@@ -674,6 +684,7 @@ export function ModelsPage() {
             />
             <div className="mt-4">
               <NumberInputs
+                group="settings"
                 values={{
                   exit_multiple: s.exit_multiple,
                   opening_nwc: s.opening_nwc,
@@ -700,6 +711,7 @@ export function ModelsPage() {
                 </p>
                 <Field
                   label="Base revenue (actual units)"
+                  hint={historicalLabel(workspace,"dcf.base_revenue")??undefined}
                   type="number"
                   value={workspace.dcfInputs.base_revenue ?? ""}
                   onChange={(e) =>
@@ -773,6 +785,7 @@ export function ModelsPage() {
                                   }))
                                 }
                               />
+                              {historicalLabel(workspace,`dcf.${k}.${i}`) && <p className="mt-1 max-w-40 text-xs text-mist">{historicalLabel(workspace,`dcf.${k}.${i}`)}</p>}
                             </td>
                           ))}
                         </tr>
@@ -835,6 +848,7 @@ export function ModelsPage() {
               </select>
             </label>
             <NumberInputs
+              group="ddm"
               values={s.ddm}
               omit={["horizon"]}
               change={(k, v) =>
@@ -846,6 +860,7 @@ export function ModelsPage() {
         {tab === "assets" && (
           <>
             <NumberInputs
+              group="assets"
               values={s.assets}
               change={(k, v) =>
                 update((a) => ({ ...a, assets: { ...a.assets, [k]: v } }))

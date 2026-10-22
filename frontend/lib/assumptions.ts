@@ -41,6 +41,10 @@ export interface Assumption {
   }[];
 }
 export interface Adoption {
+  mode?: "automatic" | "historical restore";
+  input_hash?: string;
+  window?: 2 | 3 | 5;
+  user_modified_at?: string;
   id: string;
   source: Assumption;
   target: string;
@@ -60,6 +64,8 @@ export interface Proposal {
   capitalBase?: number;
 }
 const mappings: Record<string, string[]> = {
+  base_revenue: ["dcf.base_revenue"], opening_nwc: ["settings.opening_nwc"],
+  cash: ["settings.cash"], debt: ["settings.debt"], book_assets: ["assets.book_assets"], book_liabilities: ["assets.book_liabilities"],
   revenue_growth: ["forecast.growth", "dcf.revenue_growth"],
   gross_margin: ["forecast.gross_margin"],
   ebitda_margin: ["forecast.ebitda_margin"],
@@ -103,12 +109,14 @@ const arrays = new Set([
   "nwc_pct_revenue",
 ]);
 export function targetsFor(a: Assumption, w: Workspace): string[] {
-  return (mappings[a.metric] ?? []).flatMap((t) => {
-    const [group, key] = t.split(".");
-    return group === "dcf" && arrays.has(key)
-      ? w.dcfInputs.revenue_growth.map((_, i) => `${t}.${i}`)
-      : [t];
-  });
+  return (Object.hasOwn(mappings, a.metric) ? mappings[a.metric] : []).flatMap(
+    (t) => {
+      const [group, key] = t.split(".");
+      return group === "dcf" && arrays.has(key)
+        ? w.dcfInputs.revenue_growth.map((_, i) => `${t}.${i}`)
+        : [t];
+    },
+  );
 }
 export function currentValue(w: Workspace, target: string): number | null {
   const [group, key, index] = target.split(".");
@@ -329,6 +337,7 @@ export function applyProposals(
           : ""),
       classification:
         p.source.classification === "management guidance" &&
+        p.source.explicit &&
         p.source.value === p.value &&
         !p.capitalBase
           ? "management guidance"
@@ -340,7 +349,7 @@ export function applyProposals(
     ...(w.assumptions ?? []).filter(
       (a) => !proposals.some((p) => p.source.id === a.id),
     ),
-    ...proposals.map((p) => ({ ...p.source, status: "accepted" as const })),
+    ...Array.from(new Map(proposals.map(p=>[p.source.id,{...p.source,status:"accepted" as const}])).values()),
   ];
   next.assumptionAdoptions = [...(w.assumptionAdoptions ?? []), ...adopted];
   return next;
@@ -348,11 +357,63 @@ export function applyProposals(
 export function assumptionExport(w: Workspace) {
   return (w.assumptionAdoptions ?? []).map((a) => ({
     ...a,
-    source: {
-      ...a.source,
-      excerpt: w.settings.persistDocumentText ? a.source.excerpt : "",
-    },
+    source: w.settings.persistDocumentText
+      ? a.source
+      : redactEvidence(a.source),
   }));
+}
+export function redactEvidence(a: Assumption): Assumption {
+  // Whitelist metadata so imported extension fields cannot retain hidden source text.
+  const keys = [
+    "id",
+    "metric",
+    "value",
+    "minimum",
+    "maximum",
+    "unit",
+    "currency",
+    "unit_scale",
+    "period",
+    "basis",
+    "scope",
+    "classification",
+    "explicit",
+    "document_id",
+    "document_name",
+    "page",
+    "confidence",
+    "status",
+    "rationale",
+  ] as const;
+  const copy = {
+    ...Object.fromEntries(keys.map((key) => [key, a[key]])),
+    excerpt: "",
+  } as Assumption;
+  if (a.original) {
+    const { metric, value, minimum, maximum, unit, currency, unit_scale } =
+      a.original;
+    copy.original = {
+      metric,
+      value,
+      minimum,
+      maximum,
+      unit,
+      currency,
+      unit_scale,
+    };
+  }
+  if (a.inputs)
+    copy.inputs = a.inputs.map(
+      ({ metric, period, value, currency, unit_scale, document_id }) => ({
+        metric,
+        period,
+        value,
+        currency,
+        unit_scale,
+        document_id,
+      }),
+    );
+  return copy;
 }
 export function validateAssumptions(w: Workspace): void {
   if (
@@ -388,9 +449,46 @@ export function validateAssumptions(w: Workspace): void {
       ) ||
       !Number.isFinite(a.unit_scale) ||
       a.unit_scale <= 0 ||
+      typeof a.explicit !== "boolean" ||
+      !Number.isFinite(a.confidence) ||
+      a.confidence < 0 ||
+      a.confidence > 1 ||
+      (a.page !== null && (!Number.isInteger(a.page) || a.page < 1)) ||
       !["pending", "accepted", "rejected", "requires review"].includes(a.status)
     )
       throw new Error("Malformed assumption evidence.");
+    if (
+      a.inputs !== undefined &&
+      (!Array.isArray(a.inputs) ||
+        a.inputs.some(
+          (input) =>
+            !input ||
+            [
+              input.metric,
+              input.period,
+              input.currency,
+              input.document_id,
+            ].some((value) => typeof value !== "string") ||
+            !Number.isFinite(input.value) ||
+            !Number.isFinite(input.unit_scale) ||
+            input.unit_scale <= 0,
+        ))
+    )
+      throw new Error("Malformed historical evidence inputs.");
+    if (
+      a.original &&
+      ([a.original.metric, a.original.unit, a.original.currency].some(
+        (value) => typeof value !== "string",
+      ) ||
+        [a.original.value, a.original.minimum, a.original.maximum].some(
+          (value) =>
+            value !== null &&
+            (typeof value !== "number" || !Number.isFinite(value)),
+        ) ||
+        !Number.isFinite(a.original.unit_scale) ||
+        a.original.unit_scale <= 0)
+    )
+      throw new Error("Malformed original assumption values.");
   }
   for (const a of w.assumptionAdoptions ?? [])
     if (

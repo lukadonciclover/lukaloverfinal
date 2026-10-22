@@ -27,7 +27,7 @@ export function valuationFingerprint(workspace: Workspace): string {
 }
 
 export function financialFingerprint(figures: FinancialFigure[]): string {
-  return fingerprint(figures.map(({ id: _id, record_id: _recordId, ...figure }) => figure));
+  return fingerprint(figures.map(({company_id,metric,period,value,currency,unit_scale}) => ({company_id,metric,period,value,currency,unit_scale})).sort((a,b)=>JSON.stringify(a).localeCompare(JSON.stringify(b))));
 }
 
 // Compatibility check for stored pre-workbench DCF snapshots.

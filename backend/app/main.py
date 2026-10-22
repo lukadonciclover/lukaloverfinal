@@ -15,6 +15,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 
 from app.schemas import ComparablesRequest, FinancialAnalysisRequest, RetrievalRequest
+from equitylens.historical_references import historical_references, unavailable_reasons
 from equitylens.assumption_export import WorkbenchExport
 from equitylens.assumptions import extract_assumptions, derive_assumptions, derive_revenue_guidance
 from equitylens.documents import (
@@ -77,13 +78,18 @@ def health() -> dict[str, Any]:
 @app.post("/v1/financials/analyze")
 def analyze_financials(payload: FinancialAnalysisRequest) -> dict[str, Any]:
     issues = data_quality_issues(payload.figures)
+    if payload.currency and any(f.currency != payload.currency for f in payload.figures):
+        raise HTTPException(422, "Approved figure currency differs from project currency.")
     blocking = [issue for issue in issues if issue.startswith(("Currency mismatch", "Duplicate figure", "Annual and quarterly", "Unrecognized"))]
     if blocking:
         raise HTTPException(status_code=422, detail=" ".join(blocking))
     table = analysis_table(payload.figures)
+    rows = dataframe_records(table.reset_index())
     return {
         "periods": periods_to_metrics(payload.figures),
-        "analysis": dataframe_records(table.reset_index()),
+        "analysis": rows,
+        "unavailable_reasons": unavailable_reasons(payload.figures, rows),
+        "historical_references": historical_references(payload.figures, payload.currency or (payload.figures[0].currency if payload.figures else "USD"), payload.history_window),
         "quality_issues": issues,
         "formulas": FORMULAS,
     }
@@ -265,3 +271,12 @@ class AssumptionHistoryRequest(FinancialAnalysisRequest):
 @app.post("/v1/assumptions/derive")
 def assumption_history(payload: AssumptionHistoryRequest):
     return derive_assumptions(payload.figures, payload.currency) + derive_revenue_guidance(payload.assumptions, payload.figures, payload.currency)
+
+
+class HistoricalReferenceRequest(AssumptionHistoryRequest):
+    window: Literal[2, 3, 5] = 3
+
+
+@app.post("/v1/assumptions/historical-averages")
+def historical_averages(payload: HistoricalReferenceRequest):
+    return historical_references(payload.figures, payload.currency, payload.window)

@@ -43,7 +43,7 @@ def test_amount_scales(word, scale):
     assert a["scope"] == "consolidated" and a["value"] == 5
 
 
-@pytest.mark.parametrize("period,basis,expected", [("FY 2027","annual","FY 2027"),("calendar 2027","annual","2027"),("Q4 2027","quarter","Q4 2027"),("2027-2029 CAGR","multi-year","2027 / 2029"),("long-term","long-term","Long term"),("next fiscal year","relative annual","next fiscal year")])
+@pytest.mark.parametrize("period,basis,expected", [("FY 2027","annual","FY 2027"),("calendar 2027","annual","CY 2027"),("Q4 2027","quarter","Q4 2027"),("2027-2029 CAGR","multi-year","2027 / 2029"),("long-term","long-term","Long term"),("next fiscal year","relative annual","next fiscal year")])
 def test_periods(period,basis,expected):
     a=extract(f"Revenue growth guidance 5% {period}")[0]
     assert a["basis"]==basis and a["period"]==expected
@@ -159,3 +159,29 @@ def test_dividend_growth_is_per_share_not_earnings():
     fs=[figure("dividend_per_share",2,"2024"),figure("dividend_per_share",2.2,"2025"),figure("net_income",500)]
     rows=derive_assumptions(fs,"USD")
     assert len(rows)==1 and rows[0]["metric"]=="dividend_growth" and rows[0]["value"]==pytest.approx(.1)
+
+
+def test_calculate_and_export_api_with_accepted_input_and_redacted_source():
+    from test_workbench import model
+    d=model();d.revenue_growth[0]=.06
+    payload=Workbench(currency="USD",dcf=d,cash=0,debt=0).model_dump(mode="json")
+    calculation=client.post("/v1/workbench/calculate",json=payload)
+    assert calculation.status_code==200 and "DCF" in calculation.json()["models"]
+    a=extract("Revenue growth guidance 6% FY 2027")[0];a["excerpt"]=""
+    payload["assumption_sources"]=[dict(source=a,target="dcf.revenue_growth.0",value=.06,period="2027",rationale="Confirmed annual input",classification="management guidance",accepted_at="2026-10-22T00:00:00Z")]
+    response=client.post("/v1/workbench/export",json=payload)
+    assert response.status_code==200
+    wb=load_workbook(BytesIO(response.content))
+    audit=wb["Assumptions & Sources"]
+    assert audit["D2"].value==.06 and audit["U2"].value=="Source text unavailable"
+    assert audit["X2"].value=="Accepted"
+
+
+def test_effective_dcf_export_does_not_misattribute_overridden_input():
+    from test_workbench import project
+    p=project()
+    a=extract("Revenue growth guidance 80% FY 2027")[0]
+    accepted=AcceptedSource(source=a,target="dcf.revenue_growth.0",value=.8,period="2027",rationale="Old standalone input",classification="analyst assumption",accepted_at="2026-10-22T00:00:00Z")
+    p.dcf.revenue_growth[0]=.8
+    row=source_rows(p,[accepted])[0]
+    assert row[3]==p.forecast.growth and "Superseded" in row[4]

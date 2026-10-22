@@ -5,7 +5,8 @@ import { createBlankWorkspace } from "@/lib/defaults";
 import { dcfFingerprint, valuationFingerprint } from "@/lib/fingerprint";
 import { deleteIndexedWorkspace, loadIndexedWorkspace, saveIndexedWorkspace } from "@/lib/storage";
 import type { AgentRun, Experiment, Portfolio, ResearchProject, Workspace } from "@/lib/types";
-import { validateAssumptions } from "./assumptions";
+import { markHistoricalEdits } from "./historical-references";
+import { redactEvidence, validateAssumptions } from "./assumptions";
 import { settingsFor } from "@/lib/workbench";
 
 const LEGACY_STORAGE_KEY = "equitylens-workspace-v1";
@@ -59,6 +60,12 @@ function newProject(workspace: Workspace, name: string): ResearchProject {
 
 function validateWorkspace(workspace: Workspace): void {
   validateAssumptions(workspace);
+  if (workspace.historicalReferences !== undefined) {
+    const refs=workspace.historicalReferences;
+    if (!record(refs) || ![2,3,5].includes(refs.window) || typeof refs.input_hash!=="string" || typeof refs.currency!=="string" || typeof refs.created_at!=="string" || !Array.isArray(refs.averages) || !Array.isArray(refs.latest) || !Array.isArray(refs.periods) || !Array.isArray(refs.available_years) || !Array.isArray(refs.issues) || [...refs.periods,...refs.available_years,...refs.issues].some(v=>typeof v!=="string")) throw new Error("Malformed historical references.");
+    if(refs.averages.some(a=>!record(a) || typeof a.metric!=="string" || !finiteOrNull(a.value) || !Number.isInteger(a.count) || a.count<0 || !Array.isArray(a.observations) || !Array.isArray(a.periods) || typeof a.unavailable!=="string")) throw new Error("Malformed historical averages.");
+    validateAssumptions({...workspace,assumptionAdoptions:[],assumptions:[...refs.latest,...refs.averages.flatMap(a=>[a.source,...a.observations])]});
+  }
   if (workspace.valuationWorkbench !== undefined) {
     const template = settingsFor({ ...workspace, valuationWorkbench: undefined });
     const validateSettings = (value: unknown, expected: unknown, path: string): void => {
@@ -203,8 +210,9 @@ export function persistenceCopy(workspace: Workspace): Workspace {
   if (workspace.settings.persistDocumentText) return workspace;
   return {
     ...workspace,
-    assumptions: workspace.assumptions?.map(a => ({...a, excerpt: ""})),
-    assumptionAdoptions: workspace.assumptionAdoptions?.map(a => ({...a, source: {...a.source, excerpt: ""}})),
+    historicalReferences: workspace.historicalReferences ? {...workspace.historicalReferences, latest: workspace.historicalReferences.latest.map(redactEvidence), averages: workspace.historicalReferences.averages.map(a=>({...a,source:redactEvidence(a.source),observations:a.observations.map(redactEvidence)}))} : undefined,
+    assumptions: workspace.assumptions?.map(redactEvidence),
+    assumptionAdoptions: workspace.assumptionAdoptions?.map(a => ({...a, source: redactEvidence(a.source)})),
     documents: workspace.documents.map((document) => ({ ...document, chunks: [], suggestions: document.suggestions.map((suggestion) => ({ ...suggestion, quote: "" })) })),
     figures: workspace.figures.map((figure) => ({ ...figure, source: figure.source ? { ...figure.source, quote: "" } : figure.source })),
     agentRuns: Object.fromEntries(Object.entries(workspace.agentRuns).map(([name, run]) => [name, run.source_ids.length || workspace.documents.length ? { ...run, prompt: "", raw_output: "", parsed_output: null, valid: false, errors: ["Source-derived text was not persisted by privacy policy."] } : run])),
@@ -276,7 +284,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     const boundProjectId = activeProject?.id;
     setPortfolio((current) => ({ ...current, projects: current.projects.map((project) => {
       if (project.id !== boundProjectId) return project;
-      const next = typeof updater === "function" ? updater(project.workspace) : updater;
+      const next = markHistoricalEdits(project.workspace, typeof updater === "function" ? updater(project.workspace) : updater);
       return next === project.workspace ? project : { ...project, updated_at: now(), workspace: { ...next, version: 2, revision: project.workspace.revision + 1 } };
     }) }));
   }, [activeProject?.id]);

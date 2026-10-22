@@ -1,6 +1,7 @@
 "use client";
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo } from "react";
+import { useFinancialAnalysis } from "@/lib/use-financial-analysis";
 import { apiPost } from "@/lib/api";
 import { useWorkspace } from "@/lib/workspace";
 import { Button, Card, Notice, PageHeader } from "@/components/ui";
@@ -20,25 +21,18 @@ type AnalysisResponse = {
 };
 export function FinancialsPage() {
   const { workspace, updateWorkspace, hydrated } = useWorkspace();
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
-  const requestRef = useRef<AbortController | null>(null);
-  const figureHash = financialFingerprint(workspace.figures);
-  const analysis =
-    workspace.financialAnalysis?.input_hash === figureHash
-      ? workspace.financialAnalysis
-      : null;
-  const currentHashRef = useRef(figureHash);
-  currentHashRef.current = figureHash;
+  const {loading,error,completed,run,hash:figureHash}=useFinancialAnalysis();
+  const current=workspace.financialAnalysis?.input_hash===figureHash && (!workspace.financialAnalysis.currency || workspace.financialAnalysis.currency===workspace.company.currency);
+  const analysis=workspace.financialAnalysis;
   const currency = workspace.company.currency;
   const currencyMismatch = workspace.figures.some(
     (f) => f.currency !== currency,
   );
   // The analysis endpoint returns monetary fields in the largest ledger scale.
   // Convert only displayed monetary amounts; ratios are dimensionless.
-  const analysisScale = workspace.figures.length
+  const analysisScale = analysis?.unit_scale ?? (workspace.figures.length
     ? Math.max(...workspace.figures.map((f) => f.unit_scale))
-    : 1;
+    : 1);
   const history = useMemo(() => {
     if (currencyMismatch) return [];
     const periods = [...new Set(workspace.figures.map((f) => f.period))].sort();
@@ -54,58 +48,6 @@ export function FinancialsPage() {
       ),
     }));
   }, [workspace.figures, currencyMismatch]);
-  async function runAnalysis() {
-    requestRef.current?.abort();
-    const controller = new AbortController();
-    requestRef.current = controller;
-    const requestedHash = figureHash;
-    setLoading(true);
-    setError("");
-    try {
-      const response = await apiPost<AnalysisResponse>(
-        "/v1/financials/analyze",
-        {
-          figures: workspace.figures.map(
-            ({ record_id: _recordId, ...figure }) => figure,
-          ),
-        },
-        { signal: controller.signal },
-      );
-      if (requestedHash === currentHashRef.current)
-        updateWorkspace((current) => ({
-          ...current,
-          financialAnalysis: {
-            ...response,
-            input_hash: requestedHash,
-            created_at: new Date().toISOString(),
-          },
-        }));
-    } catch (reason) {
-      if (!controller.signal.aborted)
-        setError(reason instanceof Error ? reason.message : "Analysis failed.");
-    } finally {
-      if (requestRef.current === controller) setLoading(false);
-    }
-  }
-  useEffect(() => {
-    requestRef.current?.abort();
-    if (!hydrated || !workspace.figures.length || currencyMismatch || analysis)
-      return;
-    const timer = window.setTimeout(() => {
-      void runAnalysis();
-    }, 400);
-    return () => {
-      window.clearTimeout(timer);
-      requestRef.current?.abort();
-    };
-  }, [
-    analysis,
-    figureHash,
-    hydrated,
-    workspace.figures.length,
-    currencyMismatch,
-  ]);
-
   const analysisRows = currencyMismatch ? [] : (analysis?.analysis ?? []);
   return (
     <>
@@ -115,18 +57,24 @@ export function FinancialsPage() {
           <Button
             disabled={!workspace.figures.length || currencyMismatch}
             loading={loading}
-            onClick={runAnalysis}
+            onClick={()=>void run(true)}
           >
-            Calculate performance
+            {loading ? "Calculating..." : current ? "Recalculate Performance" : "Calculate Performance"}
           </Button>
         }
       />
-      {analysis && (
+      <div className="mb-4 space-y-2" role="status" aria-live="polite">
+        <p>{loading?"Calculating financial performance...":completed || (current?"Analysis is up to date":"Ready to calculate")}</p>
+        {current && completed && <p>Analysis is up to date</p>}
+        {analysis && <p className="text-sm text-mist">Latest successful calculation: {new Date(analysis.created_at).toLocaleString()} ? {workspace.company.name} ? {analysis.analysis.map(row=>row.period).join(", ")}</p>}
+        {workspace.historicalReferences && <p className="text-sm">Historical averages: {workspace.historicalReferences.averages.filter(a=>a.value!==null).length} available; {workspace.historicalReferences.averages.filter(a=>a.value===null).length} unavailable. Review missing inputs in Forecasting.</p>}
+      </div>
+      {current && (
         <Link
           href="/forecasting"
           className="mb-4 block text-sm text-teal underline"
         >
-          Continue to Forecasting
+          Review Forecast Assumptions
         </Link>
       )}
       <div className="mb-4">
@@ -141,10 +89,9 @@ export function FinancialsPage() {
           currencies in Financial Data before comparing results.
         </Notice>
       )}
-      {!analysis && workspace.financialAnalysis && (
+      {!current && workspace.financialAnalysis && (
         <Notice kind="warning">
-          Financial data changed. Recalculate performance to refresh the
-          results.
+          Previously calculated results are stale. Recalculate performance to refresh them.
         </Notice>
       )}
       {!workspace.figures.length ? (
@@ -206,6 +153,7 @@ export function FinancialsPage() {
                             { currency, scale: analysisScale },
                           )}
                         </p>
+                        {value===null && <p className="mt-2 text-xs text-mist">{analysis.unavailable_reasons?.[String(analysis.analysis.at(-1)?.period)]?.[key] ?? "Required approved inputs are missing or the denominator is not valid. Review Financial Data."}</p>}
                       </div>
                     ))}
                 </div>

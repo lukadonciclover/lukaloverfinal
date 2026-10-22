@@ -510,7 +510,7 @@ def export_workbench(p: Workbench, assumption_sources=None) -> bytes:
     from equitylens.assumption_export import source_rows
     audit = wb.create_sheet("Assumptions & Sources")
     audit.append(["Metric", "Target", "Accepted value", "Current model value", "Usage", "Application period", "Applied classification", "Original value", "Original minimum", "Original maximum", "Source unit", "Source currency", "Source scale", "Source period", "Period basis", "Scope", "Source classification", "Document ID", "Document", "Page", "Excerpt", "Rationale", "Accepted at", "Review status"])
-    for row in source_rows(p, assumption_sources or []):
+    for row in source_rows(p, assumption_sources or [], result):
         audit.append([safe(value) for value in row])
     for sheet in wb:
         sheet.cell(

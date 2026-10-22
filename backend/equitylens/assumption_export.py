@@ -4,7 +4,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from equitylens.workbench import Workbench, effective_dcf, evaluate
 
 
-class SourceEvidence(BaseModel):
+class OriginalEvidence(BaseModel):
     model_config = ConfigDict(extra="ignore", allow_inf_nan=False)
     metric: str
     value: float | None = None
@@ -13,6 +13,9 @@ class SourceEvidence(BaseModel):
     unit: str
     currency: str = ""
     unit_scale: float = Field(default=1, gt=0)
+
+
+class SourceEvidence(OriginalEvidence):
     period: str
     basis: str
     scope: str
@@ -21,7 +24,7 @@ class SourceEvidence(BaseModel):
     document_name: str
     page: int | None = None
     excerpt: str = Field(default="", max_length=20000)
-    original: dict[str, Any] | None = None
+    original: OriginalEvidence | None = None
 
 
 class AcceptedSource(BaseModel):
@@ -39,9 +42,9 @@ class WorkbenchExport(Workbench):
     assumption_sources: list[AcceptedSource] = Field(default_factory=list, max_length=10000)
 
 
-def source_rows(p: Workbench, sources: list[AcceptedSource]) -> list[list[Any]]:
+def source_rows(p: Workbench, sources: list[AcceptedSource], result: dict | None = None) -> list[list[Any]]:
     rows = []
-    result = evaluate(p)
+    result = result if result is not None else evaluate(p)
     # Latest acceptance for each target is authoritative; older identical values remain history.
     latest = {a.target: i for i, a in enumerate(sources)}
     for i, a in enumerate(sources):
@@ -73,7 +76,7 @@ def source_rows(p: Workbench, sources: list[AcceptedSource]) -> list[list[Any]]:
         else:
             status = "Current model input"
         s = a.source
-        original = s.original or s.model_dump()
+        original = s.original.model_dump() if s.original else s.model_dump()
         rows.append([s.metric,a.target,a.value,current,status,a.period,a.classification,original.get("value"),original.get("minimum"),original.get("maximum"),
             original.get("unit"),original.get("currency"),original.get("unit_scale"),s.period,s.basis,s.scope,s.classification,s.document_id,s.document_name,s.page,
             s.excerpt or "Source text unavailable",a.rationale,a.accepted_at,"Accepted"])

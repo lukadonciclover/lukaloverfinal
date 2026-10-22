@@ -14,6 +14,7 @@ import {
   type Assumption,
   type Proposal,
 } from "@/lib/assumptions";
+import { formatFinancialLabel } from "@/lib/financial-formatting";
 import { settingsFor } from "@/lib/workbench";
 import { Button, Card, Notice } from "./ui";
 import { ConfirmationDialog } from "./confirmation-dialog";
@@ -228,7 +229,7 @@ export function AssumptionAnalysis() {
           </p>
         )}
         <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm">
+          <table className="w-full min-w-[850px] text-left text-sm">
             <thead>
               <tr>
                 {[
@@ -249,7 +250,7 @@ export function AssumptionAnalysis() {
               {visible.map((a) => (
                 <tr key={a.id} className="border-t border-line align-top">
                   <td className="p-2">
-                    {a.metric.replaceAll("_", " ")}
+                    {formatFinancialLabel(a.metric)}
                     <p className="text-xs text-mist">
                       {a.period} · {a.basis} · {a.scope}
                     </p>
@@ -333,7 +334,7 @@ export function AssumptionAnalysis() {
             <div key={a.id} className="my-4 border border-line p-4">
               <div className="flex justify-between gap-3">
                 <h3>
-                  {a.metric.replaceAll("_", " ")} — {a.period}
+                  {formatFinancialLabel(a.metric)} — {a.period}
                 </h3>
                 <button
                   aria-label={`Remove proposal ${a.metric}`}

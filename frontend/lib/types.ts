@@ -189,6 +189,9 @@ export interface Experiment {
 }
 
 export interface FinancialAnalysisSnapshot {
+  unit_scale?: number;
+  currency?: string;
+  unavailable_reasons?: Record<string, Record<string,string>>;
   analysis: Array<Record<string, number | string | null>>;
   quality_issues: string[];
   formulas: Record<string, string>;
@@ -215,6 +218,7 @@ export interface WorkflowState {
 }
 
 export interface Workspace {
+  historicalReferences?: import("./historical-references").HistoricalReferences;
   assumptions?: import("./assumptions").Assumption[];
   assumptionAdoptions?: import("./assumptions").Adoption[];
   valuationWorkbench?: import("./workbench").WorkbenchSettings;
