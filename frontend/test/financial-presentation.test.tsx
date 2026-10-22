@@ -169,6 +169,7 @@ it("keeps review and approval in Financial Data without requesting analysis", as
           page: 1,
           quote: "Cash flow 100",
           confidence: 0.9,
+          units_confirmed: true, currency_confirmed: true,
         },
       ],
     },
@@ -189,19 +190,18 @@ it("keeps review and approval in Financial Data without requesting analysis", as
     screen.queryByRole("heading", { name: "Financial Analysis" }),
   ).not.toBeInTheDocument();
   fireEvent.change(
-    screen.getByRole("spinbutton", { name: "Review Value suggestion 1" }),
+    await screen.findByRole("spinbutton", { name: "Review Value suggestion 1" }),
     { target: { value: "125" } },
   );
   fireEvent.click(screen.getByRole("button", { name: "Accept" }));
+  fireEvent.click(screen.getByRole("button", { name: "Approve Eligible Records" }));
   expect(screen.getByRole("spinbutton", { name: "Value row 1" })).toHaveValue(
     125,
   );
   expect(screen.getByRole("combobox", { name: "Metric row 1" })).toHaveValue(
     "operating_cash_flow",
   );
-  expect(window.confirm).toHaveBeenCalledWith(
-    expect.stringContaining("Operating Cash Flow"),
-  );
+  expect(screen.getByText(/records approved/)).toBeInTheDocument();
   expect(mocks.post).not.toHaveBeenCalled();
 });
 it("normalizes analysis monetary presentation without scaling ratios", async () => {

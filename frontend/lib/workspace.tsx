@@ -140,7 +140,7 @@ export function parseWorkspace(value: unknown, allowSensitiveRetention = true): 
   const documents = value.documents.map((documentValue) => {
     if (!record(documentValue) || !Array.isArray(documentValue.chunks) || !Array.isArray(documentValue.suggestions) || typeof documentValue.identifier !== "string") throw new Error("A source document record is malformed.");
     const suggestions = documentValue.suggestions.map((suggestion) => {
-      if (!record(suggestion) || typeof suggestion.metric !== "string" || typeof suggestion.period !== "string" || typeof suggestion.value !== "number" || !Number.isFinite(suggestion.value) || typeof suggestion.unit_scale !== "number" || suggestion.unit_scale <= 0 || typeof suggestion.quote !== "string") throw new Error("A document suggestion is malformed.");
+      if (!record(suggestion) || typeof suggestion.metric !== "string" || typeof suggestion.period !== "string" || !finiteOrNull(suggestion.value) || typeof suggestion.unit_scale !== "number" || !Number.isFinite(suggestion.unit_scale) || typeof suggestion.quote !== "string") throw new Error("A document suggestion is malformed.");
       return suggestion;
     });
     return { ...documentValue, suggestions, chunks: documentValue.chunks.map((chunkValue, index) => {

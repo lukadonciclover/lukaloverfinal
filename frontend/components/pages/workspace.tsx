@@ -1,21 +1,17 @@
 "use client";
+import { DocumentUpload } from "@/components/document-upload";
 
 import { CreateProjectForm } from "@/components/create-project-form";
 import Link from "next/link";
 import { FinancialLedger } from "@/components/financial-ledger";
-import { useRef, useState } from "react";
 import {
   Archive,
   Copy,
   FileSpreadsheet,
   FileText,
-  FolderPlus,
   Pencil,
   Trash2,
-  UploadCloud,
 } from "lucide-react";
-import { apiUpload } from "@/lib/api";
-import type { DocumentRecord } from "@/lib/types";
 import { useWorkspace } from "@/lib/workspace";
 import {
   Button,
@@ -26,19 +22,12 @@ import {
   TextArea,
 } from "@/components/ui";
 
-type ProcessResponse = {
-  document: Omit<DocumentRecord, "chunks" | "suggestions">;
-  chunks: DocumentRecord["chunks"];
-  suggestions: DocumentRecord["suggestions"];
-};
-
 export function WorkspacePage() {
   const {
     workspace,
     project,
     projects,
     updateWorkspace,
-    createProject,
     renameProject,
     duplicateProject,
     archiveProject,
@@ -47,57 +36,11 @@ export function WorkspacePage() {
     persistenceMessage,
     setDocumentRetention,
   } = useWorkspace();
-  const [uploading, setUploading] = useState(false);
-  const [error, setError] = useState("");
-  const [message, setMessage] = useState("");
-  const inputRef = useRef<HTMLInputElement>(null);
   const company = workspace.company;
   const updateCompany = (field: string, value: string | number | null) =>
     updateWorkspace((current) => {
       return { ...current, company: { ...current.company, [field]: value } };
     });
-
-  async function upload(files: FileList | null) {
-    if (!files?.length) return;
-    if (uploading) return;
-    setUploading(true);
-    setError("");
-    setMessage("");
-    let completed = 0;
-    try {
-      for (const file of Array.from(files)) {
-        const form = new FormData();
-        form.append("file", file);
-        form.append("currency", company.currency);
-        const result = await apiUpload<ProcessResponse>(
-          "/v1/documents/process",
-          form,
-        );
-        updateWorkspace((current) => ({
-          ...current,
-          documents: [
-            ...current.documents.filter(
-              (item) => item.identifier !== result.document.identifier,
-            ),
-            {
-              ...result.document,
-              chunks: result.chunks,
-              suggestions: result.suggestions,
-            },
-          ],
-        }));
-        completed += 1;
-      }
-      setMessage(
-        `${completed} document${completed === 1 ? "" : "s"} processed. Review extraction suggestions before using them.`,
-      );
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Upload failed.");
-    } finally {
-      setUploading(false);
-      if (inputRef.current) inputRef.current.value = "";
-    }
-  }
 
   function removeDocument(identifier: string, name: string) {
     if (!window.confirm(`Remove ${name} and its derived financial figures?`))
@@ -305,58 +248,7 @@ export function WorkspacePage() {
             {persistenceMessage}
           </p>
         </Card>
-        <Card>
-          <p className="eyebrow">Source intake</p>
-          <h2 className="mt-1 text-xl font-semibold">
-            Process financial documents
-          </h2>
-          <button
-            disabled={uploading}
-            onClick={() => inputRef.current?.click()}
-            className="mt-5 flex min-h-48 w-full flex-col items-center justify-center border border-dashed border-line bg-ink/60 p-6 text-center transition hover:border-teal disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            <UploadCloud className="text-teal" size={30} />
-            <span className="mt-3 font-semibold">Choose PDF, CSV, or XLSX</span>
-            <span className="mt-1 text-xs text-mist">
-              4 MB and 100-page synchronous limit
-            </span>
-          </button>
-          <input
-            ref={inputRef}
-            aria-label="Upload financial documents"
-            className="hidden"
-            type="file"
-            accept=".pdf,.csv,.xlsx"
-            multiple
-            onChange={(event) => upload(event.target.files)}
-          />
-          <Button
-            loading={uploading}
-            disabled={uploading}
-            className="mt-3 w-full"
-            onClick={() => inputRef.current?.click()}
-          >
-            {uploading ? "Processing document" : "Select documents"}
-          </Button>
-          <div className="mt-4">
-            <Notice kind="info">
-              Uploaded bytes have no application-level server retention. The
-              platform may use transient function memory or temporary upload
-              storage. Extracted text is not persisted in this browser unless
-              source-text retention is enabled below.
-            </Notice>
-          </div>
-          {error && (
-            <div className="mt-3">
-              <Notice kind="error">{error}</Notice>
-            </div>
-          )}
-          {message && (
-            <div className="mt-3">
-              <Notice kind="success">{message}</Notice>
-            </div>
-          )}
-        </Card>
+        <DocumentUpload key={project.id} />
       </div>
       <p className="mt-5">
         <Link href="/financials" className="text-teal underline">

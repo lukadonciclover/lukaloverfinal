@@ -31,6 +31,7 @@ export interface SourceRef {
 }
 
 export interface FinancialFigure {
+  record_id?: string;
   id?: number | null;
   company_id: number;
   metric: string;
@@ -54,9 +55,12 @@ export interface EvidenceChunk {
 }
 
 export interface FigureSuggestion {
+  record_id?: string;
+  units_confirmed?: boolean;
+  currency_confirmed?: boolean;
   metric: string;
   period: string;
-  value: number;
+  value: number | null;
   currency: string;
   unit_scale: number;
   page: number;

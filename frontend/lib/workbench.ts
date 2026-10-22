@@ -178,7 +178,7 @@ export function payloadFor(w: Workspace) {
   const s = settingsFor(w);
   return {
     currency: w.company.currency,
-    figures: w.figures,
+    figures: w.figures.map(({ record_id: _recordId, ...figure }) => figure),
     forecast: s.enabled.forecast ? s.forecast : null,
     dcf: s.enabled.dcf
       ? {

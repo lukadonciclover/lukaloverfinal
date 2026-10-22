@@ -1,4 +1,5 @@
 "use client";
+import { AssumptionShortcuts } from "@/components/assumption-shortcuts";
 import { CreateProjectForm } from "@/components/create-project-form";
 import { FinancialDataTable } from "@/components/financial-data-table";
 import { FinancialChartTooltip } from "@/components/financial-chart";
@@ -244,6 +245,7 @@ export function ForecastingPage() {
             </select>
           </label>
         </div>
+        <AssumptionShortcuts kind="forecast" />
         <NumberInputs
           values={s.forecast}
           omit={["horizon"]}
@@ -274,9 +276,17 @@ export function ForecastingPage() {
         </h2>
         <DataTable
           rows={result?.forecast ?? []}
-          caption="Forecast outputs ? calculated from user-entered assumptions"
+          caption="Forecast outputs - calculated from user-entered assumptions"
         />
       </Card>
+      {!!result?.forecast.length && (
+        <Link
+          href="/valuation"
+          className="mt-4 block text-sm text-teal underline"
+        >
+          Continue to Valuation Models
+        </Link>
+      )}
     </>
   );
 }
@@ -292,6 +302,9 @@ function PeerEditor({
   change: (rows: PeerInput[]) => void;
 }) {
   const [error, setError] = useState("");
+  const [query, setQuery] = useState("");
+  const visible = (row: PeerInput) =>
+    row.company.toLowerCase().includes(query.toLowerCase());
   const numeric = [
     "unit_scale",
     "market_cap",
@@ -360,6 +373,51 @@ function PeerEditor({
           />
         </label>
       </div>
+      <div className="my-3 flex flex-wrap gap-2">
+        <Field
+          label="Filter companies"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+        />
+        <Button
+          variant="secondary"
+          onClick={() => change(rows.map((r) => ({ ...r, selected: true })))}
+        >
+          Select All
+        </Button>
+        <Button
+          variant="secondary"
+          onClick={() => change(rows.map((r) => ({ ...r, selected: false })))}
+        >
+          Deselect All
+        </Button>
+        <Button
+          variant="secondary"
+          onClick={() =>
+            change(rows.map((r) => (visible(r) ? { ...r, selected: true } : r)))
+          }
+        >
+          Select Visible
+        </Button>
+        <Button
+          variant="danger"
+          disabled={!rows.some((r) => r.selected)}
+          onClick={() => {
+            if (
+              window.confirm(
+                `Remove ${rows.filter((r) => r.selected).length} selected ${transactions ? "transactions" : "peers"}?`,
+              )
+            )
+              change(rows.filter((r) => !r.selected));
+          }}
+        >
+          Bulk Remove Selected
+        </Button>
+        <p className="text-sm text-mist">
+          {rows.filter((r) => r.selected).length} selected / {rows.length}{" "}
+          records
+        </p>
+      </div>
       {error && <Notice kind="error">{formatFinancialMessage(error)}</Notice>}
       <p className="text-xs text-mist">
         Import columns match this table with underscores. Currency and
@@ -380,75 +438,79 @@ function PeerEditor({
             </tr>
           </thead>
           <tbody>
-            {rows.map((r, i) => (
-              <tr key={i}>
-                <td>
-                  <input
-                    aria-label={`Include row ${i + 1}`}
-                    type="checkbox"
-                    checked={r.selected}
-                    onChange={(e) => edit(i, "selected", e.target.checked)}
-                  />
-                </td>
-                <td>
-                  <input
-                    aria-label={`Company row ${i + 1}`}
-                    className="field w-40"
-                    value={r.company}
-                    onChange={(e) => edit(i, "company", e.target.value)}
-                  />
-                </td>
-                <td>
-                  <input
-                    aria-label={`Currency row ${i + 1}`}
-                    className="field w-20"
-                    value={r.currency}
-                    onChange={(e) =>
-                      edit(i, "currency", e.target.value.toUpperCase())
-                    }
-                  />
-                </td>
-                {transactions && (
+            {rows.map((r, i) =>
+              visible(r) ? (
+                <tr key={i}>
                   <td>
                     <input
-                      aria-label={`Date row ${i + 1}`}
-                      type="date"
-                      className="field"
-                      value={r.acquisition_date}
-                      onChange={(e) =>
-                        edit(i, "acquisition_date", e.target.value)
-                      }
+                      aria-label={`Include row ${i + 1}`}
+                      type="checkbox"
+                      checked={r.selected}
+                      onChange={(e) => edit(i, "selected", e.target.checked)}
                     />
                   </td>
-                )}
-                {numeric.map((k) => (
-                  <td key={k}>
+                  <td>
                     <input
-                      aria-label={`${label(k)} row ${i + 1}`}
-                      className="field w-28"
-                      type="number"
-                      step="any"
-                      value={r[k] ?? ""}
+                      aria-label={`Company row ${i + 1}`}
+                      className="field w-40"
+                      value={r.company}
+                      onChange={(e) => edit(i, "company", e.target.value)}
+                    />
+                  </td>
+                  <td>
+                    <input
+                      aria-label={`Currency row ${i + 1}`}
+                      className="field w-20"
+                      value={r.currency}
                       onChange={(e) =>
-                        edit(
-                          i,
-                          k,
-                          e.target.value === "" ? null : Number(e.target.value),
-                        )
+                        edit(i, "currency", e.target.value.toUpperCase())
                       }
                     />
                   </td>
-                ))}
-                <td>
-                  <button
-                    aria-label={`Remove row ${i + 1}`}
-                    onClick={() => change(rows.filter((_, n) => n !== i))}
-                  >
-                    Remove
-                  </button>
-                </td>
-              </tr>
-            ))}
+                  {transactions && (
+                    <td>
+                      <input
+                        aria-label={`Date row ${i + 1}`}
+                        type="date"
+                        className="field"
+                        value={r.acquisition_date}
+                        onChange={(e) =>
+                          edit(i, "acquisition_date", e.target.value)
+                        }
+                      />
+                    </td>
+                  )}
+                  {numeric.map((k) => (
+                    <td key={k}>
+                      <input
+                        aria-label={`${label(k)} row ${i + 1}`}
+                        className="field w-28"
+                        type="number"
+                        step="any"
+                        value={r[k] ?? ""}
+                        onChange={(e) =>
+                          edit(
+                            i,
+                            k,
+                            e.target.value === ""
+                              ? null
+                              : Number(e.target.value),
+                          )
+                        }
+                      />
+                    </td>
+                  ))}
+                  <td>
+                    <button
+                      aria-label={`Remove row ${i + 1}`}
+                      onClick={() => change(rows.filter((_, n) => n !== i))}
+                    >
+                      Remove
+                    </button>
+                  </td>
+                </tr>
+              ) : null,
+            )}
           </tbody>
         </table>
       </div>
@@ -612,6 +674,7 @@ export function ModelsPage() {
               </p>
             ) : (
               <>
+                <AssumptionShortcuts kind="dcf" />
                 <p className="my-4 text-mist">
                   Standalone DCF. Blank opening NWC uses base revenue ×
                   first-year NWC ratio.

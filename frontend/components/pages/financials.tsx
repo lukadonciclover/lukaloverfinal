@@ -64,7 +64,11 @@ export function FinancialsPage() {
     try {
       const response = await apiPost<AnalysisResponse>(
         "/v1/financials/analyze",
-        { figures: workspace.figures },
+        {
+          figures: workspace.figures.map(
+            ({ record_id: _recordId, ...figure }) => figure,
+          ),
+        },
         { signal: controller.signal },
       );
       if (requestedHash === currentHashRef.current)
@@ -117,6 +121,14 @@ export function FinancialsPage() {
           </Button>
         }
       />
+      {analysis && (
+        <Link
+          href="/forecasting"
+          className="mb-4 block text-sm text-teal underline"
+        >
+          Continue to Forecasting
+        </Link>
+      )}
       <div className="mb-4">
         <Link className="text-sm text-teal underline" href="/workspace">
           Edit financial data
@@ -154,7 +166,10 @@ export function FinancialsPage() {
             </Card>
             <Card>
               <h2>Latest Key Ratios</h2>
-            <p className="mt-2 text-xs text-mist">All calculated metrics are available in Historical Performance below.</p>
+              <p className="mt-2 text-xs text-mist">
+                All calculated metrics are available in Historical Performance
+                below.
+              </p>
               {!analysis ? (
                 <p className="mt-4 text-sm text-mist">
                   {loading
@@ -164,7 +179,18 @@ export function FinancialsPage() {
               ) : (
                 <div className="mt-4 grid gap-4 sm:grid-cols-2">
                   {Object.entries(analysis.analysis.at(-1) ?? {})
-                    .filter(([key]) => ["revenue_growth","gross_margin","ebitda_margin","net_profit_margin","return_on_equity","return_on_invested_capital","current_ratio","net_debt"].includes(key))
+                    .filter(([key]) =>
+                      [
+                        "revenue_growth",
+                        "gross_margin",
+                        "ebitda_margin",
+                        "net_profit_margin",
+                        "return_on_equity",
+                        "return_on_invested_capital",
+                        "current_ratio",
+                        "net_debt",
+                      ].includes(key),
+                    )
                     .map(([key, value]) => (
                       <div key={key} className="border-b border-line pb-3">
                         <p className="text-xs text-mist">
