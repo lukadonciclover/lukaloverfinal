@@ -1,5 +1,5 @@
 import type { Workspace } from "./types";
-import { settingsFor } from "./workbench";
+import { profitabilityMethod, settingsFor } from "./workbench";
 
 export interface Assumption {
   id: string;
@@ -212,7 +212,9 @@ export function proposalError(p: Proposal, w: Workspace): string | null {
     return "Source currency must match the project. Currency conversion requires separate evidence.";
   const s = settingsFor(w),
     [group, key] = p.target.split(".");
-  if (p.target === "forecast.ebitda_margin" && s.forecast.opex_ratio !== null)
+  if (p.target === "forecast.opex_ratio" && profitabilityMethod(s) !== "opex")
+    return "Select Use Operating Expenses / Revenue in Forecasting before adopting this input.";
+  if (p.target === "forecast.ebitda_margin" && profitabilityMethod(s) === "opex")
     return "The operating expense ratio currently controls EBITDA. Review that input in Forecasting before adopting an EBITDA margin.";
   if (
     (group === "dcf" && s.enabled.forecast && arrays.has(key)) ||
@@ -241,12 +243,14 @@ export function proposalError(p: Proposal, w: Workspace): string | null {
       "terminal_growth",
     ].includes(key)
       ? -1
-      : key === "nwc_pct_revenue"
+      : key === "nwc_ratio"
+        ? -1
+        : key === "nwc_pct_revenue"
         ? -10
         : 0;
     const max =
-      key === "growth" && group === "forecast"
-        ? 3
+      ["growth", "nwc_ratio"].includes(key) && group === "forecast"
+        ? 1
         : ["opex_ratio", "nwc_ratio", "nwc_pct_revenue"].includes(key)
           ? 2
           : 1;

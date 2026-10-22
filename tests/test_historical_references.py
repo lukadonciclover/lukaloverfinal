@@ -54,11 +54,11 @@ def test_latest_balances_never_average_or_fill_missing_debt():
     assert not any(a["metric"]=="debt" for a in historical_references([f for f in fs if f.metric!="long_term_debt"],"USD")["latest"])
 
 def test_fallback_definitions_use_actual_source_inputs_and_opex_compatibility():
-    fs=[figure("revenue",100),figure("cost_of_goods_sold",60),figure("ebit",20),figure("depreciation_amortization",5),figure("interest_expense",4),figure("tax_expense",4),figure("operating_expenses",15)]
+    fs=[figure("revenue",100),figure("cost_of_goods_sold",60),figure("ebit",20),figure("depreciation_amortization",5),figure("interest_expense",4),figure("tax_expense",4),figure("nonoperating_income",0),figure("nonoperating_expenses",0),figure("operating_expenses",15)]
     a=ratios(historical_references(fs,"USD"))
     assert a["gross_margin"]["value"]==.4 and a["ebitda_margin"]["value"]==.25
     assert a["tax_rate"]["value"]==.25
-    assert {i["metric"] for i in a["tax_rate"]["source"]["inputs"]}=={"ebit","interest_expense","tax_expense"}
+    assert {i["metric"] for i in a["tax_rate"]["source"]["inputs"]}=={"ebit","interest_expense","tax_expense","nonoperating_income","nonoperating_expenses"}
     assert not a["opex_ratio"]["prefill_eligible"]
     fs[-1].notes="Excludes depreciation and amortization"
     assert ratios(historical_references(fs,"USD"))["opex_ratio"]["prefill_eligible"]

@@ -253,7 +253,7 @@ it("applies annual assumptions, copies previous year and confirms resets", async
   );
   fireEvent.change(
     await screen.findByRole("spinbutton", { name: "Value across years" }),
-    { target: { value: ".1" } },
+    { target: { value: "10" } },
   );
   fireEvent.click(
     screen.getByRole("button", { name: "Apply Value Across All Years" }),

@@ -8,7 +8,7 @@ import {
   type Assumption,
   type Proposal,
 } from "./assumptions";
-import { settingsFor } from "./workbench";
+import { settingsFor, profitabilityMethod } from "./workbench";
 
 export interface HistoricalAverage {
   metric: string;
@@ -80,20 +80,13 @@ export function historicalCandidates(
         !refs.averages.find((a) => a.metric === "opex_ratio")?.prefill_eligible
       )
         return false;
-      if (
-        settings.forecast.ebitda_margin !== null ||
-        sources.some((a) => a.metric === "ebitda_margin" && a.value !== null)
-      )
-        return false;
-      const gross = sources.find((a) => a.metric === "gross_margin")?.value;
-      if (
-        gross === null ||
-        gross === undefined ||
-        (settings.forecast.gross_margin !== null &&
-          settings.forecast.gross_margin !== gross)
-      )
-        return false;
+      if (profitabilityMethod(settings) !== "opex") return false;
     }
+    if (
+      p.target === "forecast.ebitda_margin" &&
+      profitabilityMethod(settings) !== "ebitda"
+    )
+      return false;
     return !proposalError(p, w);
   });
 }
@@ -105,7 +98,8 @@ export function fillHistorical(
   const rows = historicalCandidates(w, scope).filter((p) =>
     target
       ? p.target === target
-      : currentValue(w, p.target) === null &&
+      : !["forecast.net_borrowing", "forecast.dividends", "forecast.minimum_cash"].includes(p.target) && currentValue(w, p.target) === null &&
+        !settingsFor(w).edited_inputs?.includes(p.target) &&
         !(w.assumptionAdoptions ?? []).some(
           (a) => a.target === p.target && a.user_modified_at,
         ),

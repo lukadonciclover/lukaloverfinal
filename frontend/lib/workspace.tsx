@@ -81,6 +81,8 @@ function validateWorkspace(workspace: Workspace): void {
       }
     };
     validateSettings(workspace.valuationWorkbench, template, "valuationWorkbench");
+    if (workspace.valuationWorkbench.edited_inputs !== undefined && (!Array.isArray(workspace.valuationWorkbench.edited_inputs) || workspace.valuationWorkbench.edited_inputs.some(v => typeof v !== "string"))) throw new Error("Invalid edited inputs");
+    if (workspace.valuationWorkbench.profitability_method !== undefined && !["ebitda", "opex"].includes(workspace.valuationWorkbench.profitability_method)) throw new Error("Invalid profitability method");
   }
   if (typeof workspace.company.name !== "string" || !workspace.company.name.trim() || workspace.company.name.length > 300) throw new Error("Company name is missing or too long.");
   if (typeof workspace.company.currency !== "string" || !/^[A-Z]{3}$/.test(workspace.company.currency)) throw new Error("Company currency must be a three-letter code.");

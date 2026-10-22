@@ -102,6 +102,12 @@ def export_workbench(p: Workbench, assumption_sources=None) -> bytes:
                 ]
             )
 
+        if not any(f.period == period and f.metric == "net_working_capital" for f in p.figures):
+            from equitylens.reference_derivations import NWC_ASSETS, NWC_LIABILITIES
+            terms = [f"B{opening_rows[k]}" for k in NWC_ASSETS]
+            deductions = [f"B{opening_rows[k]}" for k in NWC_LIABILITIES]
+            opening.cell(opening_rows["net_working_capital"], 2, "=" + "+".join(terms) + "-" + "-".join(deductions))
+
         def op(key):
             return f"'Opening balances'!$B${opening_rows[key]}"
 

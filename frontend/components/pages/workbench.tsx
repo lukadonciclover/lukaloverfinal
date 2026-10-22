@@ -1,4 +1,6 @@
 "use client";
+import { AssumptionNumber } from "@/components/assumption-number";
+import { assumptionStatus } from "@/lib/assumption-status";
 import { HistoricalReferenceControls } from "@/components/historical-reference-controls";
 import { historicalLabel } from "@/lib/historical-references";
 import { assumptionExport } from "@/lib/assumptions";
@@ -27,6 +29,7 @@ import { persistenceCopy, useWorkspace } from "@/lib/workspace";
 import {
   payloadFor,
   settingsFor,
+  profitabilityMethod,
   type PeerInput,
   type WorkbenchResult,
   type ModelOutput,
@@ -109,7 +112,7 @@ function NumberInputs<T extends object>({
   omit?: string[];
   group?: string;
 }) {
-  const { workspace } = useWorkspace();
+  const { workspace, updateWorkspace } = useWorkspace();
   return (
     <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
       {Object.entries(values)
@@ -118,21 +121,41 @@ function NumberInputs<T extends object>({
             !omit.includes(k) && (typeof v === "number" || v === null),
         )
         .map(([k, v]) => (
-          <Field
+          <AssumptionNumber
             key={k}
+            id={`assumption-${group}-${k}`}
+            metric={k}
             label={label(k)}
-            hint={
-              (group && historicalLabel(workspace, `${group}.${k}`)) ||
-              financialInputHint(k, workspace.company.currency)
+            value={v}
+            onValue={(value) => {
+              change(k as keyof T, value);
+              if (group)
+                updateWorkspace((w) => ({
+                  ...w,
+                  valuationWorkbench: {
+                    ...settingsFor(w),
+                    edited_inputs: [
+                      ...new Set([
+                        ...(settingsFor(w).edited_inputs ?? []),
+                        `${group}.${k}`,
+                      ]),
+                    ],
+                  },
+                }));
+            }}
+            disabled={
+              group === "forecast" &&
+              ((k === "opex_ratio" &&
+                profitabilityMethod(settingsFor(workspace)) === "ebitda") ||
+                (k === "ebitda_margin" &&
+                  profitabilityMethod(settingsFor(workspace)) === "opex"))
             }
-            type="number"
-            step="any"
-            value={v ?? ""}
-            onChange={(e) =>
-              change(
-                k as keyof T,
-                e.target.value === "" ? null : Number(e.target.value),
-              )
+            hint={
+              group
+                ? assumptionStatus(workspace, `${group}.${k}`)
+                : v === null
+                  ? "Missing Supporting Data - enter a reviewed value"
+                  : "Analyst Assumption - editable model input"
             }
           />
         ))}
@@ -194,7 +217,7 @@ export function ForecastingPage() {
       <PageHeader
         kicker="Forecasting"
         title="Forecasting"
-        description="Rates are decimals (0.05 = 5%). Monetary inputs and outputs use actual currency units."
+        description="Rate inputs are percentages. Monetary inputs and outputs use actual currency units."
       />
       <HistoricalReferenceControls scope="forecast" />
       <Card>
@@ -210,6 +233,22 @@ export function ForecastingPage() {
             }
           />{" "}
           Enable integrated forecast and link it to DCF
+        </label>
+        <label className="my-4 block">
+          Profitability Forecast Method
+          <select
+            className="field mt-2"
+            value={profitabilityMethod(s)}
+            onChange={(e) =>
+              update((v) => ({
+                ...v,
+                profitability_method: e.target.value as "ebitda" | "opex",
+              }))
+            }
+          >
+            <option value="ebitda">Use EBITDA Margin</option>
+            <option value="opex">Use Operating Expenses / Revenue</option>
+          </select>
         </label>
         <div className="my-5 flex gap-6">
           <label>
@@ -270,8 +309,9 @@ export function ForecastingPage() {
           }
         />
         <p className="mt-4 text-sm text-mist">
-          Opex ratio overrides EBITDA margin when supplied. Other assets and
-          non-debt liabilities remain constant. NWC represents net operating
+          The selected profitability method controls EBITDA. Operating expenses
+          must exclude depreciation, which is deducted separately. Other assets
+          and non-debt liabilities remain constant. NWC represents net operating
           assets. Interest uses opening debt; revolver draws occur at year-end.
           Missing opening balances block the forecast.
         </p>
@@ -558,7 +598,7 @@ export function ModelsPage() {
       <PageHeader
         kicker="Valuation models"
         title="Valuation Models"
-        description="Independent models. Money in actual currency units; diluted shares in actual shares. Rates are decimals."
+        description="Independent models. Money in actual currency units; diluted shares in actual shares. Rate inputs are percentages."
       />
       <Link
         className="mb-3 inline-block text-teal"
@@ -714,9 +754,7 @@ export function ModelsPage() {
                 </p>
                 <Field
                   label="Base revenue (actual units)"
-                  hint={
-                    historicalLabel(workspace, "dcf.base_revenue") ?? undefined
-                  }
+                  hint={assumptionStatus(workspace, "dcf.base_revenue")}
                   type="number"
                   value={workspace.dcfInputs.base_revenue ?? ""}
                   onChange={(e) =>
@@ -768,33 +806,26 @@ export function ModelsPage() {
                           <td>{i + 1}</td>
                           {annual.map((k) => (
                             <td key={k}>
-                              <input
-                                aria-label={`${label(k)} year ${i + 1}`}
-                                className="field w-28"
-                                type="number"
-                                step="any"
-                                value={workspace.dcfInputs[k][i] ?? ""}
-                                onChange={(e) =>
+                              <AssumptionNumber
+                                metric={k}
+                                label={`${label(k)} year ${i + 1}`}
+                                value={workspace.dcfInputs[k][i]}
+                                hint={assumptionStatus(
+                                  workspace,
+                                  `dcf.${k}.${i}`,
+                                )}
+                                onValue={(value) =>
                                   updateWorkspace((w) => ({
                                     ...w,
                                     dcfInputs: {
                                       ...w.dcfInputs,
                                       [k]: w.dcfInputs[k].map((v, n) =>
-                                        n === i
-                                          ? e.target.value === ""
-                                            ? null
-                                            : Number(e.target.value)
-                                          : v,
+                                        n === i ? value : v,
                                       ),
                                     },
                                   }))
                                 }
                               />
-                              {historicalLabel(workspace, `dcf.${k}.${i}`) && (
-                                <p className="mt-1 max-w-40 text-xs text-mist">
-                                  {historicalLabel(workspace, `dcf.${k}.${i}`)}
-                                </p>
-                              )}
                             </td>
                           ))}
                         </tr>
@@ -809,6 +840,7 @@ export function ModelsPage() {
               <div className="my-4" key={name}>
                 <p className="mb-2 text-gold">{name}</p>
                 <NumberInputs
+                  group={`scenarios.${name}`}
                   values={scenario}
                   change={(k, v) =>
                     update((a) => ({

@@ -18,6 +18,18 @@ PERIOD_RE = re.compile(r"\b(?:19|20)\d{2}\b")
 NUMBER_RE = re.compile(r"(?<!\w)\(?(?:\$|€|£)?-?\d[\d,]*(?:\.\d+)?\)?")
 
 METRIC_ALIASES = {
+    "dividends": ("total dividends paid", "dividends paid", "dividends"),
+    "net_borrowing": ("net borrowing", "net_borrowing"),
+    "prepaid_expenses": ("prepaid expenses", "prepaid_expenses"),
+    "other_operating_current_assets": ("other operating current assets", "other_operating_current_assets"),
+    "accrued_operating_liabilities": ("accrued operating liabilities", "accrued_operating_liabilities"),
+    "other_operating_current_liabilities": ("other operating current liabilities", "other_operating_current_liabilities"),
+    "discontinued_operations_net_income": ("discontinued operations net income", "discontinued_operations_net_income"),
+    "noncontrolling_net_income": ("noncontrolling net income", "noncontrolling_net_income"),
+    "other_tax_reconciliation": ("other tax reconciliation", "other_tax_reconciliation"),
+    "nonoperating_expenses": ("nonoperating expenses", "nonoperating_expenses"),
+    "nonoperating_income": ("nonoperating income", "nonoperating_income"),
+
     "total_debt": ("total debt", "total_debt"),
     "pretax_income": ("pretax income", "profit before tax", "income before tax", "pretax_income"),
     "dividend_per_share": ("dividend per share", "dividend_per_share"),

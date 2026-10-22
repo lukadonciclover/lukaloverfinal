@@ -91,9 +91,8 @@ it("sends manual requests, shows loading and completion, and confirms unchanged 
       }),
   );
   mount();
-  fireEvent.click(
-    await screen.findByRole("button", { name: "Calculate Performance" }),
-  );
+  await waitFor(() => expect(screen.getByRole("button", { name: "Calculate Performance" })).toBeEnabled());
+  fireEvent.click(screen.getByRole("button", { name: "Calculate Performance" }));
   expect(screen.getByRole("button", { name: "Calculating..." })).toBeDisabled();
   expect(mocks.post).toHaveBeenCalledTimes(1);
   expect(mocks.post.mock.calls[0][0]).toBe("/v1/financials/analyze");

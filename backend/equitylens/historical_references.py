@@ -15,9 +15,10 @@ RATIOS = {
     "opex_ratio": "Operating expenses excluding D&A, and positive revenue; confirm compatibility with the forecast gross-profit-to-EBITDA definition",
     "depreciation_ratio": "Depreciation & amortization and positive revenue",
     "capex_ratio": "Capital expenditure and positive revenue",
-    "nwc_ratio": "Explicit net operating working capital and positive revenue; generic current assets minus current liabilities is not substituted",
+    "nwc_ratio": "Reported operating NWC or complete operating current assets less operating current liabilities, and positive revenue",
     "dividend_growth": "Consecutive annual per-share dividends, with positive prior per-share dividend",
-    "tax_rate": "Tax expense and positive pretax income (or EBIT minus interest expense); reported effective tax is not forecast cash tax",
+    "tax_rate": "Tax expense and positive compatible pretax income; reported effective tax is not forecast cash tax",
+    "interest_rate": "Explicit borrowing interest expense and comparable beginning/end interest-bearing debt; implied historical rate, not a contractual or future rate",
 }
 
 
@@ -30,21 +31,28 @@ def historical_references(figures, currency: str, window: int = 3):
     years = sorted({f.period for f in usable})
     selected = years[-window:]
     indexed = {(f.period, f.metric): f for f in usable}
-    expansions = {}
-    # These definitions match the existing financial analysis; no generic NWC substitution.
-    for year in years:
-        for target, left, right, sign in [("gross_profit", "revenue", "cost_of_goods_sold", -1), ("ebitda", "ebit", "depreciation_amortization", 1), ("pretax_income", "ebit", "interest_expense", -1)]:
-            a, b = indexed.get((year, left)), indexed.get((year, right))
-            if counts[year, target] == 0 and a is not None and b is not None:
-                amount = a.value*a.unit_scale + sign*b.value*b.unit_scale
-                if math.isfinite(amount):
-                    derived = FinancialFigure(company_id=a.company_id, metric=target, period=year, value=amount, currency=currency, unit_scale=1, origin="derived")
-                    usable.append(derived)
-                    indexed[year, target] = derived
-                    expansions[year, target] = [a, b]
+    from equitylens.reference_derivations import extend_ledger
+    expansions, missing = extend_ledger(usable, indexed, counts, years, currency)
     observations = derive_assumptions(usable, currency)
     def source_input(f):
         return dict(metric=f.metric,period=f.period,value=f.value,currency=f.currency,unit_scale=f.unit_scale,document_id=f.source.document_identifier if f.source else "")
+    for year in years:
+        interest = indexed.get((year, "interest_expense"))
+        debt = indexed.get((year, "total_debt"))
+        prior = indexed.get((str(int(year)-1), "total_debt"))
+        if not all((interest, debt, prior)):
+            missing.setdefault("interest_rate", []).append(f"{year}: missing borrowing interest expense or consecutive debt balances")
+            continue
+        amounts = [f.value*f.unit_scale for f in (interest, debt, prior)]
+        if amounts[1] <= 0 or amounts[2] <= 0 or not 0 <= amounts[0]/((amounts[1]+amounts[2])/2) <= 1 or (not re.search(r"borrowing interest|interest on (?:borrowings|debt)", interest.notes, re.I) or re.search(r"net interest|financing costs|not borrowing|non.?comparable", interest.notes, re.I)):
+            missing.setdefault("interest_rate", []).append(f"{year}: confirm borrowing-interest definition in Financial Data and positive comparable debt balances")
+            continue
+        if abs(amounts[1]-amounts[2])/amounts[2] > .25:
+            missing.setdefault("interest_rate", []).append(f"{year}: significant debt change; supply a reviewed weighted-average borrowing rate")
+            continue
+        value = amounts[0]/((amounts[1]+amounts[2])/2)
+        observations.append(dict(id=f"derived:interest_rate:{year}", metric="interest_rate", value=value, minimum=None, maximum=None, unit="percentage", currency=currency, unit_scale=1, period=year, basis="annual", scope="consolidated", classification="historical derived", explicit=False, document_id="approved-ledger", document_name="Approved historical ledger", page=None, excerpt="", confidence=1, status="pending", rationale="Borrowing interest / average beginning and ending debt. Historical indicator only; not a contractual or future borrowing rate.", inputs=[source_input(f) for f in (interest,debt,prior)]))
+    observations = [r for r in observations if r["metric"] != "tax_rate" or 0 <= r["value"] <= 1]
     for row in observations:
         row["inputs"] = [item for i in row["inputs"] for item in ([source_input(f) for f in expansions[i["period"],i["metric"]]] if (i["period"],i["metric"]) in expansions else [i])]
     averages = []
@@ -56,12 +64,12 @@ def historical_references(figures, currency: str, window: int = 3):
         signature = hashlib.sha256(str((metric,window,inputs)).encode()).hexdigest()
         evidence = dict(id=f"average:{signature}",metric=metric,value=value,minimum=None,maximum=None,unit="percentage",currency=currency,unit_scale=1,period=", ".join(periods) or "Unavailable",basis="historical average",scope="consolidated",classification="historical derived",explicit=False,document_id="approved-ledger",document_name="Approved historical ledger",page=None,excerpt="",confidence=1,status="pending",rationale=f"Arithmetic mean of {len(valid)} valid annual ratios in the latest {window}-year window. {required}. Historical starting reference, not a forecast.",inputs=inputs)
         compatible = metric != "opex_ratio" or all(re.search(r"exclud.*(?:depreciation|D&A)", indexed[period,"operating_expenses"].notes, re.I) or (indexed.get((period,"depreciation_amortization")) is not None and indexed[period,"depreciation_amortization"].value == 0) for period in periods)
-        averages.append(dict(prefill_eligible=compatible,metric=metric,value=value,count=len(valid),periods=periods,observations=valid,source=evidence,unavailable="" if valid else required))
+        averages.append(dict(prefill_eligible=compatible,metric=metric,value=value,count=len(valid),periods=periods,observations=valid,source=evidence,unavailable="" if valid else required + ". " + "; ".join(missing.get(metric, [])[-1:])))
     latest = []
     # Balance sheet references all use the latest annual position, never mixed-year totals.
     if years:
         year=years[-1]
-        for metric, ledger_metric in [("base_revenue","revenue"),("opening_nwc","net_working_capital"),("cash","cash"),("debt","total_debt"),("book_assets","total_assets"),("book_liabilities","total_liabilities"),("dividend","dividend_per_share")]:
+        for metric, ledger_metric in [("base_revenue","revenue"),("opening_nwc","net_working_capital"),("cash","cash"),("debt","total_debt"),("book_assets","total_assets"),("book_liabilities","total_liabilities"),("dividend","dividend_per_share"),("dividends","dividends"),("net_borrowing","net_borrowing")]:
             f=indexed.get((year,ledger_metric))
             items=[f] if f else []
             if metric=="debt" and not f and counts[year,"total_debt"]==0:
@@ -69,8 +77,8 @@ def historical_references(figures, currency: str, window: int = 3):
                 if short is not None and long is not None:items=[short,long]
             if not items:continue
             value=sum(f.value*f.unit_scale for f in items)
-            if not math.isfinite(value) or (metric=="base_revenue" and value<=0) or (metric not in {"opening_nwc"} and value<0):continue
-            evidence=dict(id=f"latest:{metric}:{hashlib.sha256(str([source_input(f) for f in items]).encode()).hexdigest()}",metric=metric,value=value,minimum=None,maximum=None,unit="currency",currency=currency,unit_scale=1,period=year,basis="annual",scope="consolidated",classification="historical derived",explicit=False,document_id="approved-ledger",document_name="Approved historical ledger",page=None,excerpt="",confidence=1,status="pending",rationale=f"Latest annual {ledger_metric}, actual {currency} units. Not an average. Confirm it remains appropriate at the valuation date.",inputs=[source_input(f) for f in items])
+            if not math.isfinite(value) or (metric=="base_revenue" and value<=0) or (metric not in {"opening_nwc", "net_borrowing"} and value<0):continue
+            evidence=dict(id=f"latest:{metric}:{hashlib.sha256(str([source_input(f) for f in items]).encode()).hexdigest()}",metric=metric,value=value,minimum=None,maximum=None,unit="currency",currency=currency,unit_scale=1,period=year,basis="annual",scope="consolidated",classification="historical derived",explicit=False,document_id="approved-ledger",document_name="Approved historical ledger",page=None,excerpt="",confidence=1,status="pending",rationale=f"Latest annual {ledger_metric}, actual {currency} units. Not an average. Confirm it remains appropriate at the valuation date.",inputs=[source_input(original) for f in items for original in expansions.get((year,f.metric),[f])])
             latest.append(evidence)
     return dict(window=window,periods=selected,available_years=years,averages=averages,latest=latest,currency=currency,
         issues=[f"Excluded duplicate {metric} in {period}." for (period,metric),count in counts.items() if count>1] + (["Excluded figures in other currencies."] if any(f.currency!=currency for f in annual) else []) + (["Quarterly data is excluded from annual references."] if any("-Q" in f.period for f in figures) else []))

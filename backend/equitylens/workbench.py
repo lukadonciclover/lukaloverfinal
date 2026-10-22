@@ -189,6 +189,12 @@ def normalized_history(p: Workbench) -> dict[str, dict[str, float]]:
             if not math.isfinite(normalized) or abs(normalized) > 1e100:
                 raise ValueError("Normalized financial values are too large to calculate safely.")
             history.setdefault(f.period, {})[f.metric] = normalized
+    # Derive only the complete operating-NWC opening balance in a local copy.
+    # The approved ledger and forecast mathematics remain unchanged.
+    from equitylens.reference_derivations import NWC_ASSETS, NWC_LIABILITIES
+    for period, row in history.items():
+        if not any(f.period == period and f.metric == "net_working_capital" for f in p.figures) and "net_working_capital" not in row and all(k in row for k in (*NWC_ASSETS, *NWC_LIABILITIES)):
+            row["net_working_capital"] = sum(row[k] for k in NWC_ASSETS) - sum(row[k] for k in NWC_LIABILITIES)
     return dict(sorted(history.items()))
 
 

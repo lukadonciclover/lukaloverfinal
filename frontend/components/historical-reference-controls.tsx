@@ -17,7 +17,8 @@ import {
   type HistoricalReferences,
   type HistoricalScope,
 } from "@/lib/historical-references";
-import { settingsFor } from "@/lib/workbench";
+import { operatingSummary } from "@/lib/assumption-status";
+import { profitabilityMethod, settingsFor } from "@/lib/workbench";
 import { formatFinancialLabel } from "@/lib/financial-formatting";
 import { Button, Card, Notice } from "./ui";
 import { ConfirmationDialog } from "./confirmation-dialog";
@@ -121,7 +122,14 @@ export function HistoricalReferenceControls({
         `Filled ${result.count} empty inputs from approved historical data. Existing values are preserved.`,
       );
     }
-  }, [project.id, refs?.created_at, scope, current, updateWorkspace]);
+  }, [
+    project.id,
+    refs?.created_at,
+    scope,
+    current,
+    w.valuationWorkbench?.profitability_method,
+    updateWorkspace,
+  ]);
   function fill() {
     const result = fillHistorical(w, scope);
     updateWorkspace((value) => fillHistorical(value, scope).workspace);
@@ -132,9 +140,34 @@ export function HistoricalReferenceControls({
     );
   }
   const candidates = historicalCandidates(w, scope);
+  const summary = operatingSummary(w);
   return (
     <Card className="mb-5">
       <h2>Historical Starting Assumptions</h2>
+      {scope === "forecast" && (
+        <div className="my-3 text-sm" aria-live="polite">
+          <p>
+            {summary.sourced} of {summary.total} applicable operating
+            assumptions populated from approved financial data.{" "}
+            {summary.missing.length} require additional information. Optional
+            financing policies and inactive drivers are excluded.
+          </p>
+          {!!summary.missing.length && (
+            <a
+              className="text-teal underline"
+              href={`#assumption-forecast-${summary.missing[0]}`}
+            >
+              Review Missing Inputs
+            </a>
+          )}
+        </div>
+      )}
+      <Link
+        href="/workspace#assumption-analysis"
+        className="text-sm text-teal underline"
+      >
+        Supply Financial Data or review source-backed assumptions
+      </Link>
       <p className="my-2 text-sm text-mist">
         Annual historical averages are editable starting inputs, not management
         forecasts. Reported effective tax may differ from forecast cash tax.
@@ -197,7 +230,7 @@ export function HistoricalReferenceControls({
       {scope === "forecast" && (
         <p className="my-3 text-sm">
           Active profitability driver:{" "}
-          {settingsFor(w).forecast.opex_ratio !== null
+          {profitabilityMethod(settingsFor(w)) === "opex"
             ? "Gross margin minus operating expense ratio (overrides EBITDA margin)"
             : "EBITDA margin"}
           . Interest and financing assumptions require reviewed inputs.

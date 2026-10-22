@@ -42,6 +42,8 @@ export interface WorkbenchSettings {
     peers: boolean;
     transactions: boolean;
   };
+  edited_inputs?: string[];
+  profitability_method?: "ebitda" | "opex";
   forecast: ForecastSettings;
   wacc: {
     risk_free: number | null;
@@ -179,7 +181,19 @@ export function payloadFor(w: Workspace) {
   return {
     currency: w.company.currency,
     figures: w.figures.map(({ record_id: _recordId, ...figure }) => figure),
-    forecast: s.enabled.forecast ? s.forecast : null,
+    forecast: s.enabled.forecast
+      ? {
+          ...s.forecast,
+          opex_ratio:
+            profitabilityMethod(s) === "ebitda" ? null : s.forecast.opex_ratio,
+          ebitda_margin:
+            profitabilityMethod(s) === "opex"
+              ? s.forecast.opex_ratio === null
+                ? null
+                : 0
+              : s.forecast.ebitda_margin,
+        }
+      : null,
     dcf: s.enabled.dcf
       ? {
           ...w.dcfInputs,
@@ -242,4 +256,11 @@ export interface WorkbenchResult {
     string,
     { columns: number[]; rows: number[]; values: (number | null)[][] }
   >;
+}
+
+export function profitabilityMethod(s: WorkbenchSettings): "ebitda" | "opex" {
+  return (
+    s.profitability_method ??
+    (s.forecast.opex_ratio !== null ? "opex" : "ebitda")
+  );
 }

@@ -73,17 +73,19 @@ it("automatically fills editable fields, marks manual edits and preserves them a
     </WorkspaceProvider>,
   );
   const growth = await screen.findByRole("spinbutton", { name: "Growth Rate" });
-  await waitFor(() => expect(growth).toHaveValue(0.1));
+  await waitFor(() => expect(growth).toHaveValue(10));
   expect(growth).toHaveAccessibleDescription(/10%.*Historical average/);
-  fireEvent.change(growth, { target: { value: "0.123" } });
-  expect(screen.getByRole("spinbutton",{name:"Growth Rate"})).toHaveAccessibleDescription(/12.3%.*User-modified/);
+  fireEvent.change(growth, { target: { value: "12.3" } });
+  expect(
+    screen.getByRole("spinbutton", { name: "Growth Rate" }),
+  ).toHaveAccessibleDescription(/Analyst Assumption.*User-modified/);
   fireEvent.click(screen.getByRole("button", { name: "Fill Empty Fields" }));
-  expect(growth).toHaveValue(0.123);
+  expect(growth).toHaveValue(12.3);
   await waitFor(() =>
     expect(
       mocks.save.mock.lastCall?.[0].projects[0].workspace.valuationWorkbench
         .forecast.growth,
-    ).toBe(0.123),
+    ).toBeCloseTo(0.123),
   );
   const saved = mocks.save.mock.lastCall![0];
   view.unmount();
@@ -96,8 +98,10 @@ it("automatically fills editable fields, marks manual edits and preserves them a
   );
   expect(
     await screen.findByRole("spinbutton", { name: "Growth Rate" }),
-  ).toHaveValue(0.123);
-  expect(screen.getByRole("spinbutton",{name:"Growth Rate"})).toHaveAccessibleDescription(/12.3%.*User-modified/);
+  ).toHaveValue(12.3);
+  expect(
+    screen.getByRole("spinbutton", { name: "Growth Rate" }),
+  ).toHaveAccessibleDescription(/Analyst Assumption.*User-modified/);
   fireEvent.click(screen.getByRole("button", { name: "New project" }));
   await waitFor(() =>
     expect(screen.getByRole("spinbutton", { name: "Growth Rate" })).toHaveValue(
@@ -113,12 +117,12 @@ it("restores only one reviewed field after confirmation, and marks changed histo
     </WorkspaceProvider>,
   );
   const growth = await screen.findByRole("spinbutton", { name: "Growth Rate" });
-  await waitFor(() => expect(growth).toHaveValue(0.1));
-  fireEvent.change(growth, { target: { value: "0.2" } });
+  await waitFor(() => expect(growth).toHaveValue(10));
+  fireEvent.change(growth, { target: { value: "20" } });
   const capex = screen.getByRole("spinbutton", {
     name: "Capital Expenditure / Revenue",
   });
-  fireEvent.change(capex, { target: { value: "0.09" } });
+  fireEvent.change(capex, { target: { value: "9" } });
   fireEvent.click(screen.getByText("Review Historical Averages"));
   const row = screen
     .getByText("FORECAST / growth: 0.2")
@@ -126,14 +130,14 @@ it("restores only one reviewed field after confirmation, and marks changed histo
   fireEvent.click(
     within(row).getByRole("button", { name: "Restore Historical Average" }),
   );
-  expect(growth).toHaveValue(0.2);
+  expect(growth).toHaveValue(20);
   fireEvent.click(
     within(screen.getByRole("dialog")).getByRole("button", {
       name: "Restore this input",
     }),
   );
-  expect(growth).toHaveValue(0.1);
-  expect(capex).toHaveValue(0.09);
+  expect(growth).toHaveValue(10);
+  expect(capex).toHaveValue(9);
   fireEvent.click(
     screen.getByRole("button", { name: "Update historical data" }),
   );
@@ -143,6 +147,6 @@ it("restores only one reviewed field after confirmation, and marks changed histo
   expect(
     screen.getByRole("button", { name: "Fill Empty Fields" }),
   ).toBeDisabled();
-  expect(growth).toHaveValue(0.1);
-  expect(capex).toHaveValue(0.09);
+  expect(growth).toHaveValue(10);
+  expect(capex).toHaveValue(9);
 });

@@ -43,7 +43,7 @@ export function AssumptionShortcuts({ kind }: { kind: "dcf" | "forecast" }) {
             </Select>
             <Field
               label="Value across years"
-              hint="Decimal rate (0.05 = 5%)"
+              hint="% - Analyst Assumption"
               type="number"
               step="any"
               value={value}
@@ -56,7 +56,7 @@ export function AssumptionShortcuts({ kind }: { kind: "dcf" | "forecast" }) {
                   ...w,
                   dcfInputs: {
                     ...w.dcfInputs,
-                    [field]: w.dcfInputs[field].map(() => Number(value)),
+                    [field]: w.dcfInputs[field].map(() => Number(value) / 100),
                   },
                 }))
               }

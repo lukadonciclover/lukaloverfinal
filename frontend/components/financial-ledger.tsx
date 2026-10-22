@@ -228,6 +228,19 @@ function LedgerContent() {
                         Modified; original source retained
                       </p>
                     )}
+                    {["interest_expense", "operating_expenses"].includes(figure.metric) && (
+                      <label className="mt-2 block whitespace-normal text-xs">
+                        <input type="checkbox"
+                          aria-label={`Confirm definition row ${index + 1}`}
+                          checked={figure.notes.includes(figure.metric === "interest_expense" ? "[Reviewed: borrowing interest]" : "[Reviewed: excludes depreciation and amortization]")}
+                          onChange={e => {
+                            const marker = figure.metric === "interest_expense" ? "[Reviewed: borrowing interest]" : "[Reviewed: excludes depreciation and amortization]";
+                            const checked = e.target.checked;
+                            updateWorkspace(w => ({...w, figures:w.figures.map(row => row.record_id === figure.record_id ? {...row,notes:row.notes.replace(marker, "").trim() + (checked ? ` ${marker}` : "")} : row)}));
+                          }} />{" "}
+                        {figure.metric === "interest_expense" ? "Confirmed borrowing interest only; excludes net interest and financing fees" : "Confirmed operating expenses exclude depreciation and amortization"}
+                      </label>
+                    )}
                   </td>
                   <td>
                     <button
