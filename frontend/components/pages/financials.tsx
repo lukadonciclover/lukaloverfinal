@@ -2,37 +2,41 @@
 import Link from "next/link";
 import { useMemo } from "react";
 import { useFinancialAnalysis } from "@/lib/use-financial-analysis";
-import { apiPost } from "@/lib/api";
 import { useWorkspace } from "@/lib/workspace";
 import { Button, Card, Notice, PageHeader } from "@/components/ui";
 import { FinancialDataTable } from "@/components/financial-data-table";
 import { FinancialLineChart } from "@/components/financial-chart";
-import { financialFingerprint } from "@/lib/fingerprint";
 import {
   financialUnit,
   formatFinancialLabel,
   formatFinancialValue,
   formatFinancialMessage,
 } from "@/lib/financial-formatting";
-type AnalysisResponse = {
-  analysis: Array<Record<string, number | string | null>>;
-  quality_issues: string[];
-  formulas: Record<string, string>;
-};
 export function FinancialsPage() {
-  const { workspace, updateWorkspace, hydrated } = useWorkspace();
-  const {loading,error,completed,run,hash:figureHash}=useFinancialAnalysis();
-  const current=workspace.financialAnalysis?.input_hash===figureHash && (!workspace.financialAnalysis.currency || workspace.financialAnalysis.currency===workspace.company.currency);
-  const analysis=workspace.financialAnalysis;
+  const { workspace } = useWorkspace();
+  const {
+    loading,
+    error,
+    completed,
+    run,
+    hash: figureHash,
+  } = useFinancialAnalysis();
+  const current =
+    workspace.financialAnalysis?.input_hash === figureHash &&
+    (!workspace.financialAnalysis.currency ||
+      workspace.financialAnalysis.currency === workspace.company.currency);
+  const analysis = workspace.financialAnalysis;
   const currency = workspace.company.currency;
   const currencyMismatch = workspace.figures.some(
     (f) => f.currency !== currency,
   );
   // The analysis endpoint returns monetary fields in the largest ledger scale.
   // Convert only displayed monetary amounts; ratios are dimensionless.
-  const analysisScale = analysis?.unit_scale ?? (workspace.figures.length
-    ? Math.max(...workspace.figures.map((f) => f.unit_scale))
-    : 1);
+  const analysisScale =
+    analysis?.unit_scale ??
+    (workspace.figures.length
+      ? Math.max(...workspace.figures.map((f) => f.unit_scale))
+      : 1);
   const history = useMemo(() => {
     if (currencyMismatch) return [];
     const periods = [...new Set(workspace.figures.map((f) => f.period))].sort();
@@ -40,7 +44,13 @@ export function FinancialsPage() {
       period,
       ...Object.fromEntries(
         workspace.figures
-          .filter((f) => f.period === period)
+          .filter(
+            (f) =>
+              f.period === period &&
+              workspace.figures.filter(
+                (other) => other.period === period && other.metric === f.metric,
+              ).length === 1,
+          )
           .map((f) => [
             f.metric,
             f.value === null ? null : f.value * f.unit_scale,
@@ -57,17 +67,49 @@ export function FinancialsPage() {
           <Button
             disabled={!workspace.figures.length || currencyMismatch}
             loading={loading}
-            onClick={()=>void run(true)}
+            onClick={() => void run(true)}
           >
-            {loading ? "Calculating..." : current ? "Recalculate Performance" : "Calculate Performance"}
+            {loading
+              ? "Calculating..."
+              : current
+                ? "Recalculate Performance"
+                : "Calculate Performance"}
           </Button>
         }
       />
       <div className="mb-4 space-y-2" role="status" aria-live="polite">
-        <p>{loading?"Calculating financial performance...":completed || (current?"Analysis is up to date":"Ready to calculate")}</p>
+        <p>
+          {loading
+            ? "Calculating financial performance..."
+            : completed ||
+              (current ? "Analysis is up to date" : "Ready to calculate")}
+        </p>
         {current && completed && <p>Analysis is up to date</p>}
-        {analysis && <p className="text-sm text-mist">Latest successful calculation: {new Date(analysis.created_at).toLocaleString()} ? {workspace.company.name} ? {analysis.analysis.map(row=>row.period).join(", ")}</p>}
-        {workspace.historicalReferences && <p className="text-sm">Historical averages: {workspace.historicalReferences.averages.filter(a=>a.value!==null).length} available; {workspace.historicalReferences.averages.filter(a=>a.value===null).length} unavailable. Review missing inputs in Forecasting.</p>}
+        {analysis && (
+          <p className="text-sm text-mist">
+            Latest successful calculation:{" "}
+            {new Date(analysis.created_at).toLocaleString()} |{" "}
+            {workspace.company.name} |{" "}
+            {analysis.analysis.map((row) => row.period).join(", ")}
+          </p>
+        )}
+        {workspace.historicalReferences && (
+          <p className="text-sm">
+            Historical averages:{" "}
+            {
+              workspace.historicalReferences.averages.filter(
+                (a) => a.value !== null,
+              ).length
+            }{" "}
+            available;{" "}
+            {
+              workspace.historicalReferences.averages.filter(
+                (a) => a.value === null,
+              ).length
+            }{" "}
+            unavailable. Review missing inputs in Forecasting.
+          </p>
+        )}
       </div>
       {current && (
         <Link
@@ -91,7 +133,8 @@ export function FinancialsPage() {
       )}
       {!current && workspace.financialAnalysis && (
         <Notice kind="warning">
-          Previously calculated results are stale. Recalculate performance to refresh them.
+          Previously calculated results are stale. Recalculate performance to
+          refresh them.
         </Notice>
       )}
       {!workspace.figures.length ? (
@@ -153,7 +196,14 @@ export function FinancialsPage() {
                             { currency, scale: analysisScale },
                           )}
                         </p>
-                        {value===null && <p className="mt-2 text-xs text-mist">{analysis.unavailable_reasons?.[String(analysis.analysis.at(-1)?.period)]?.[key] ?? "Required approved inputs are missing or the denominator is not valid. Review Financial Data."}</p>}
+                        {value === null && (
+                          <p className="mt-2 text-xs text-mist">
+                            {analysis.unavailable_reasons?.[
+                              String(analysis.analysis.at(-1)?.period)
+                            ]?.[key] ??
+                              "Required approved inputs are missing or the denominator is not valid. Review Financial Data."}
+                          </p>
+                        )}
                       </div>
                     ))}
                 </div>

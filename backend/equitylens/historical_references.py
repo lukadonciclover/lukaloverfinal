@@ -89,6 +89,12 @@ def unavailable_reasons(figures, rows):
             missing=[key.replace("_"," ") for key in requirements.get(metric,[]) if p.get(key) is None]
             if missing:details[metric]="Missing approved inputs: "+", ".join(missing)+"."
             elif metric=="return_on_invested_capital":
-                details[metric]="ROIC requires positive pretax income (EBIT minus interest), an effective tax rate between 0% and 100%, and positive invested capital (short-term debt + long-term debt + equity - cash). Review these approved balances."
+                issues=[]
+                pretax=p["ebit"]-p["interest_expense"]
+                invested=p["short_term_debt"]+p["long_term_debt"]+p["total_equity"]-p["cash"]
+                if pretax<=0:issues.append("Pretax income (EBIT minus interest) is not positive")
+                elif not 0<=p["tax_expense"]/pretax<=1:issues.append("The reported effective tax rate is outside 0% to 100%")
+                if invested<=0:issues.append("Invested capital (short-term debt + long-term debt + equity - cash) is not positive")
+                details[metric]="ROIC unavailable: "+"; ".join(issues)+". Review the approved balances."
             else:details[metric]="A positive denominator and comparable prior-period observations are required; review the approved annual inputs."
     return reasons

@@ -183,6 +183,12 @@ export function payloadFor(w: Workspace) {
     dcf: s.enabled.dcf
       ? {
           ...w.dcfInputs,
+          cash: s.cash,
+          debt: s.debt,
+          minority_interest: s.minority,
+          non_operating_assets: s.non_operating_assets,
+          diluted_shares: s.shares,
+          reference_price: s.price,
           terminal_method: s.terminal_method,
           exit_multiple: s.exit_multiple,
           opening_nwc: s.opening_nwc,

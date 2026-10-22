@@ -27,6 +27,7 @@ const groups: Record<FinancialUnit, string[]> = {
     "current_assets",
     "current_liabilities",
     "total_liabilities",
+    "total_debt",
     "short_term_debt",
     "long_term_debt",
     "total_equity",

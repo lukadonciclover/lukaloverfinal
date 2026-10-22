@@ -7,7 +7,7 @@ import math
 from datetime import date
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from equitylens.models import DCFInputs, FinancialFigure
 from equitylens.financials import data_quality_issues
@@ -125,11 +125,31 @@ class Scenario(Inputs):
     exit_delta: float = 0
 
 
+class WorkbenchDCF(DCFInputs):
+    """Allow empty UI inputs until linked forecast/WACC/bridge inputs are resolved.
+
+    effective_dcf still validates the resolved inputs with strict DCFInputs before
+    any calculation. No substitute financial values are inserted here.
+    """
+    base_revenue: float | None = None
+    revenue_growth: list[float | None] = Field(min_length=1, max_length=20)
+    ebit_margin: list[float | None] = Field(min_length=1, max_length=20)
+    tax_rate: list[float | None] = Field(min_length=1, max_length=20)
+    depreciation_pct_revenue: list[float | None] = Field(min_length=1, max_length=20)
+    capex_pct_revenue: list[float | None] = Field(min_length=1, max_length=20)
+    nwc_pct_revenue: list[float | None] = Field(min_length=1, max_length=20)
+    wacc: float | None = None
+    terminal_growth: float | None = None
+    exit_multiple: float | None = Field(default=None, gt=0)
+    cash: float | None = None
+    debt: float | None = None
+
+
 class Workbench(Inputs):
     currency: str = Field(pattern=r"^[A-Z]{3}$")
     figures: list[FinancialFigure] = Field(default_factory=list, max_length=10000)
     forecast: ForecastAssumptions | None = None
-    dcf: DCFInputs | None = None
+    dcf: WorkbenchDCF | None = None
     wacc: WACC | None = None
     peers: list[Peer] = Field(default_factory=list, max_length=500)
     transactions: list[Peer] = Field(default_factory=list, max_length=500)
@@ -148,6 +168,11 @@ class Workbench(Inputs):
             "Bull": Scenario(growth_delta=0.02, margin_delta=0.02, wacc_delta=-0.01),
         }
     )
+
+    @field_validator("dcf", mode="before")
+    @classmethod
+    def adapt_dcf(cls, value):
+        return value.model_dump() if isinstance(value, DCFInputs) else value
 
 
 def normalized_history(p: Workbench) -> dict[str, dict[str, float]]:

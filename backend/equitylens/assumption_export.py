@@ -15,6 +15,16 @@ class OriginalEvidence(BaseModel):
     unit_scale: float = Field(default=1, gt=0)
 
 
+class LedgerEvidence(BaseModel):
+    model_config = ConfigDict(extra="ignore", allow_inf_nan=False)
+    metric: str
+    period: str
+    value: float
+    currency: str
+    unit_scale: float = Field(gt=0)
+    document_id: str = ""
+
+
 class SourceEvidence(OriginalEvidence):
     period: str
     basis: str
@@ -25,6 +35,7 @@ class SourceEvidence(OriginalEvidence):
     page: int | None = None
     excerpt: str = Field(default="", max_length=20000)
     original: OriginalEvidence | None = None
+    inputs: list[LedgerEvidence] = Field(default_factory=list, max_length=10000)
 
 
 class AcceptedSource(BaseModel):
@@ -36,6 +47,8 @@ class AcceptedSource(BaseModel):
     rationale: str
     classification: str
     accepted_at: str
+    mode: str | None = None
+    user_modified_at: str | None = None
 
 
 class WorkbenchExport(Workbench):
@@ -51,9 +64,11 @@ def source_rows(p: Workbench, sources: list[AcceptedSource], result: dict | None
         parts = a.target.split(".")
         group, key = (parts + [""])[:2]
         obj = getattr(p, group, None) if group in {"forecast", "dcf", "wacc", "ddm", "assets"} else None
-        if group == "settings" and key == "exit_multiple":
+        if group == "settings" and key in {"cash", "debt"}:
+            obj = p
+        if group == "settings" and key in {"exit_multiple", "opening_nwc"}:
             obj = p.dcf
-        if group == "dcf" and obj is not None:
+        if (group == "dcf" or a.target=="settings.opening_nwc") and obj is not None:
             try:
                 obj = effective_dcf(p, result["history"], result["forecast"])
             except (ValueError, TypeError):
@@ -67,7 +82,7 @@ def source_rows(p: Workbench, sources: list[AcceptedSource], result: dict | None
             status = "Model disabled / unavailable"
         elif latest[a.target] != i or current != a.value:
             status = "Superseded; not current model input"
-        elif group == "settings" and p.dcf.terminal_method != "exit_multiple":
+        elif a.target == "settings.exit_multiple" and p.dcf.terminal_method != "exit_multiple":
             status = "Inactive terminal method"
         elif a.target == "dcf.terminal_growth" and p.dcf.terminal_method != "growth":
             status = "Inactive terminal method"
@@ -79,5 +94,6 @@ def source_rows(p: Workbench, sources: list[AcceptedSource], result: dict | None
         original = s.original.model_dump() if s.original else s.model_dump()
         rows.append([s.metric,a.target,a.value,current,status,a.period,a.classification,original.get("value"),original.get("minimum"),original.get("maximum"),
             original.get("unit"),original.get("currency"),original.get("unit_scale"),s.period,s.basis,s.scope,s.classification,s.document_id,s.document_name,s.page,
-            s.excerpt or "Source text unavailable",a.rationale,a.accepted_at,"Accepted"])
+            s.excerpt or "Source text unavailable",a.rationale,a.accepted_at,"User-modified after prefill" if a.user_modified_at else "Automatic historical prefill" if a.mode=="automatic" else "Restored historical reference" if a.mode else "Accepted",
+            "; ".join(f"{i.period}: {i.metric} = {i.value} x {i.unit_scale} {i.currency} ({i.document_id or 'manual ledger input'})" for i in s.inputs)])
     return rows

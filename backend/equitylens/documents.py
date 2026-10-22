@@ -18,6 +18,7 @@ PERIOD_RE = re.compile(r"\b(?:19|20)\d{2}\b")
 NUMBER_RE = re.compile(r"(?<!\w)\(?(?:\$|€|£)?-?\d[\d,]*(?:\.\d+)?\)?")
 
 METRIC_ALIASES = {
+    "total_debt": ("total debt", "total_debt"),
     "pretax_income": ("pretax income", "profit before tax", "income before tax", "pretax_income"),
     "dividend_per_share": ("dividend per share", "dividend_per_share"),
     "depreciation_amortization": ("depreciation and amortization", "depreciation_amortization"),

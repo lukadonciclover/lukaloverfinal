@@ -121,7 +121,10 @@ function NumberInputs<T extends object>({
           <Field
             key={k}
             label={label(k)}
-            hint={(group && historicalLabel(workspace, `${group}.${k}`)) || financialInputHint(k, workspace.company.currency)}
+            hint={
+              (group && historicalLabel(workspace, `${group}.${k}`)) ||
+              financialInputHint(k, workspace.company.currency)
+            }
             type="number"
             step="any"
             value={v ?? ""}
@@ -711,7 +714,9 @@ export function ModelsPage() {
                 </p>
                 <Field
                   label="Base revenue (actual units)"
-                  hint={historicalLabel(workspace,"dcf.base_revenue")??undefined}
+                  hint={
+                    historicalLabel(workspace, "dcf.base_revenue") ?? undefined
+                  }
                   type="number"
                   value={workspace.dcfInputs.base_revenue ?? ""}
                   onChange={(e) =>
@@ -785,7 +790,11 @@ export function ModelsPage() {
                                   }))
                                 }
                               />
-                              {historicalLabel(workspace,`dcf.${k}.${i}`) && <p className="mt-1 max-w-40 text-xs text-mist">{historicalLabel(workspace,`dcf.${k}.${i}`)}</p>}
+                              {historicalLabel(workspace, `dcf.${k}.${i}`) && (
+                                <p className="mt-1 max-w-40 text-xs text-mist">
+                                  {historicalLabel(workspace, `dcf.${k}.${i}`)}
+                                </p>
+                              )}
                             </td>
                           ))}
                         </tr>

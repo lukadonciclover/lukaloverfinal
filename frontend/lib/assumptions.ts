@@ -64,8 +64,12 @@ export interface Proposal {
   capitalBase?: number;
 }
 const mappings: Record<string, string[]> = {
-  base_revenue: ["dcf.base_revenue"], opening_nwc: ["settings.opening_nwc"],
-  cash: ["settings.cash"], debt: ["settings.debt"], book_assets: ["assets.book_assets"], book_liabilities: ["assets.book_liabilities"],
+  base_revenue: ["dcf.base_revenue"],
+  opening_nwc: ["settings.opening_nwc"],
+  cash: ["settings.cash"],
+  debt: ["settings.debt"],
+  book_assets: ["assets.book_assets"],
+  book_liabilities: ["assets.book_liabilities"],
   revenue_growth: ["forecast.growth", "dcf.revenue_growth"],
   gross_margin: ["forecast.gross_margin"],
   ebitda_margin: ["forecast.ebitda_margin"],
@@ -349,7 +353,14 @@ export function applyProposals(
     ...(w.assumptions ?? []).filter(
       (a) => !proposals.some((p) => p.source.id === a.id),
     ),
-    ...Array.from(new Map(proposals.map(p=>[p.source.id,{...p.source,status:"accepted" as const}])).values()),
+    ...Array.from(
+      new Map(
+        proposals.map((p) => [
+          p.source.id,
+          { ...p.source, status: "accepted" as const },
+        ]),
+      ).values(),
+    ),
   ];
   next.assumptionAdoptions = [...(w.assumptionAdoptions ?? []), ...adopted];
   return next;
@@ -493,10 +504,21 @@ export function validateAssumptions(w: Workspace): void {
   for (const a of w.assumptionAdoptions ?? [])
     if (
       !Number.isFinite(a.value) ||
-      !targetsFor(a.source, w).includes(a.target) ||
+      !(
+        targetsFor(a.source, w).includes(a.target) ||
+        (/^dcf\.[a-z_]+\.(?:[0-9]|1[0-9])$/.test(a.target) &&
+          Object.hasOwn(mappings, a.source.metric) &&
+          mappings[a.source.metric].includes(
+            a.target.split(".").slice(0, 2).join("."),
+          ))
+      ) ||
       typeof a.period !== "string" ||
       typeof a.rationale !== "string" ||
-      typeof a.accepted_at !== "string"
+      typeof a.accepted_at !== "string" ||
+      (a.mode !== undefined &&
+        !["automatic", "historical restore"].includes(a.mode)) ||
+      (a.user_modified_at !== undefined &&
+        typeof a.user_modified_at !== "string")
     )
       throw new Error("Malformed assumption adoption.");
 }
