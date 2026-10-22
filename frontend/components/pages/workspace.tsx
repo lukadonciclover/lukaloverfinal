@@ -1,4 +1,5 @@
 "use client";
+import { AssumptionAnalysis } from "@/components/assumption-analysis";
 import { DocumentUpload } from "@/components/document-upload";
 
 import { CreateProjectForm } from "@/components/create-project-form";
@@ -47,6 +48,9 @@ export function WorkspacePage() {
       return;
     updateWorkspace((current) => ({
       ...current,
+      assumptions: current.assumptions?.filter(
+        (a) => a.document_id !== identifier,
+      ),
       documents: current.documents.filter(
         (item) => item.identifier !== identifier,
       ),
@@ -323,6 +327,7 @@ export function WorkspacePage() {
       </Card>
       <div className="mt-8">
         <FinancialLedger />
+        <AssumptionAnalysis />
       </div>
     </>
   );

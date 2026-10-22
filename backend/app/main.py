@@ -15,6 +15,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 
 from app.schemas import ComparablesRequest, FinancialAnalysisRequest, RetrievalRequest
+from equitylens.assumption_export import WorkbenchExport
+from equitylens.assumptions import extract_assumptions, derive_assumptions, derive_revenue_guidance
 from equitylens.documents import (
     chunk_pages,
     classify_document,
@@ -164,6 +166,7 @@ async def process_document(file: UploadFile = File(...), currency: str = Form(de
             "retained_by_server": False,
         },
         "chunks": chunks,
+        "assumptions": extract_assumptions(extracted.pages, identifier, name),
         "suggestions": suggest_financial_figures(extracted.pages, currency.upper())[:500],
         "tables": extracted.tables[:20],
         "limits": {"max_upload_bytes": MAX_UPLOAD_BYTES, "max_pdf_pages": MAX_PDF_PAGES},
@@ -224,9 +227,9 @@ def calculate_workbench(payload: Workbench):
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 @app.post("/v1/workbench/export")
-def export_model(payload: Workbench):
+def export_model(payload: WorkbenchExport):
     try:
-        content = export_workbench(payload)
+        content = export_workbench(payload, payload.assumption_sources)
     except (ValueError, OverflowError) as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     return download(content, "equitylens-valuation.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
@@ -252,3 +255,13 @@ async def import_peers(file: UploadFile = File(...)):
         return {"rows": [Peer.model_validate({**r, "selected": False, "acquisition_date": str(r.get("acquisition_date") or "")[:10]}).model_dump() for r in rows]}
     except (ValueError, TypeError) as exc:
         raise HTTPException(422, str(exc)) from exc
+
+
+class AssumptionHistoryRequest(FinancialAnalysisRequest):
+    currency: str
+    assumptions: list[dict[str, Any]] = []
+
+
+@app.post("/v1/assumptions/derive")
+def assumption_history(payload: AssumptionHistoryRequest):
+    return derive_assumptions(payload.figures, payload.currency) + derive_revenue_guidance(payload.assumptions, payload.figures, payload.currency)

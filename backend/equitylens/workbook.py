@@ -11,7 +11,7 @@ from openpyxl.workbook.properties import CalcProperties
 from equitylens.workbench import Workbench, evaluate, effective_dcf
 
 
-def export_workbench(p: Workbench) -> bytes:
+def export_workbench(p: Workbench, assumption_sources=None) -> bytes:
     result = evaluate(p)
     wb = Workbook()
     wb.remove(wb.active)
@@ -507,6 +507,11 @@ def export_workbench(p: Workbench) -> bytes:
         assets.append(["Not completed", result["errors"].get("Asset based", "")])
     for key, error in result["errors"].items():
         summary.append([key, None, None, error])
+    from equitylens.assumption_export import source_rows
+    audit = wb.create_sheet("Assumptions & Sources")
+    audit.append(["Metric", "Target", "Accepted value", "Current model value", "Usage", "Application period", "Applied classification", "Original value", "Original minimum", "Original maximum", "Source unit", "Source currency", "Source scale", "Source period", "Period basis", "Scope", "Source classification", "Document ID", "Document", "Page", "Excerpt", "Rationale", "Accepted at", "Review status"])
+    for row in source_rows(p, assumption_sources or []):
+        audit.append([safe(value) for value in row])
     for sheet in wb:
         sheet.cell(
             sheet.max_row + 2, 1, f"{p.currency} | actual currency units; shares are actual counts; rates are decimals."

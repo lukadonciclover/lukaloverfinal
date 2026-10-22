@@ -215,6 +215,8 @@ export interface WorkflowState {
 }
 
 export interface Workspace {
+  assumptions?: import("./assumptions").Assumption[];
+  assumptionAdoptions?: import("./assumptions").Adoption[];
   valuationWorkbench?: import("./workbench").WorkbenchSettings;
   version: 2;
   revision: number;

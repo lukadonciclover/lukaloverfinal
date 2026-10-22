@@ -3,7 +3,7 @@ import { financialMetrics, formatFinancialLabel } from "./financial-formatting";
 
 export const ledgerMetrics = Object.keys(financialMetrics).filter(
   (key) =>
-    financialMetrics[key].unit === "currency" &&
+    (financialMetrics[key].unit === "currency" || key === "dividend_per_share") &&
     !["low", "high", "range"].includes(key),
 );
 export type PendingRecord = FigureSuggestion & {

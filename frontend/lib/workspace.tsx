@@ -5,6 +5,7 @@ import { createBlankWorkspace } from "@/lib/defaults";
 import { dcfFingerprint, valuationFingerprint } from "@/lib/fingerprint";
 import { deleteIndexedWorkspace, loadIndexedWorkspace, saveIndexedWorkspace } from "@/lib/storage";
 import type { AgentRun, Experiment, Portfolio, ResearchProject, Workspace } from "@/lib/types";
+import { validateAssumptions } from "./assumptions";
 import { settingsFor } from "@/lib/workbench";
 
 const LEGACY_STORAGE_KEY = "equitylens-workspace-v1";
@@ -57,6 +58,7 @@ function newProject(workspace: Workspace, name: string): ResearchProject {
 }
 
 function validateWorkspace(workspace: Workspace): void {
+  validateAssumptions(workspace);
   if (workspace.valuationWorkbench !== undefined) {
     const template = settingsFor({ ...workspace, valuationWorkbench: undefined });
     const validateSettings = (value: unknown, expected: unknown, path: string): void => {
@@ -201,6 +203,8 @@ export function persistenceCopy(workspace: Workspace): Workspace {
   if (workspace.settings.persistDocumentText) return workspace;
   return {
     ...workspace,
+    assumptions: workspace.assumptions?.map(a => ({...a, excerpt: ""})),
+    assumptionAdoptions: workspace.assumptionAdoptions?.map(a => ({...a, source: {...a.source, excerpt: ""}})),
     documents: workspace.documents.map((document) => ({ ...document, chunks: [], suggestions: document.suggestions.map((suggestion) => ({ ...suggestion, quote: "" })) })),
     figures: workspace.figures.map((figure) => ({ ...figure, source: figure.source ? { ...figure.source, quote: "" } : figure.source })),
     agentRuns: Object.fromEntries(Object.entries(workspace.agentRuns).map(([name, run]) => [name, run.source_ids.length || workspace.documents.length ? { ...run, prompt: "", raw_output: "", parsed_output: null, valid: false, errors: ["Source-derived text was not persisted by privacy policy."] } : run])),

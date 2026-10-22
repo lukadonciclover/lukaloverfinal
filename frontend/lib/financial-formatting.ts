@@ -19,6 +19,7 @@ const groups: Record<FinancialUnit, string[]> = {
     "ebit",
     "interest_expense",
     "tax_expense",
+    "pretax_income",
     "net_income",
     "cash",
     "short_term_investments",
@@ -150,6 +151,7 @@ const groups: Record<FinancialUnit, string[]> = {
     "price",
     "reference_price",
     "dividend",
+    "dividend_per_share",
     "share_price",
   ],
 

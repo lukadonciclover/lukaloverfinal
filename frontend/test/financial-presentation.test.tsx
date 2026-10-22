@@ -175,6 +175,7 @@ it("keeps review and approval in Financial Data without requesting analysis", as
     },
   ];
   mocks.load.mockResolvedValue(w);
+  mocks.post.mockResolvedValue([]);
   vi.spyOn(window, "confirm").mockReturnValue(true);
   render(
     <WorkspaceProvider>
@@ -202,7 +203,7 @@ it("keeps review and approval in Financial Data without requesting analysis", as
     "operating_cash_flow",
   );
   expect(screen.getByText(/records approved/)).toBeInTheDocument();
-  expect(mocks.post).not.toHaveBeenCalled();
+  expect(mocks.post.mock.calls.some(call=>call[0]==="/v1/financials/analyze")).toBe(false);
 });
 it("normalizes analysis monetary presentation without scaling ratios", async () => {
   const w = createBlankWorkspace("Scale Test");
@@ -237,7 +238,7 @@ it("normalizes analysis monetary presentation without scaling ratios", async () 
   expect(
     screen.queryByRole("button", { name: "Add row" }),
   ).not.toBeInTheDocument();
-  expect(mocks.post).not.toHaveBeenCalled();
+  expect(mocks.post.mock.calls.some(call=>call[0]==="/v1/financials/analyze")).toBe(false);
 });
 it("labels sensitivity columns as WACC and rows as exit multiples", async () => {
   mocks.post.mockResolvedValue({

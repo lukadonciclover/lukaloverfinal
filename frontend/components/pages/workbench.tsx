@@ -1,4 +1,5 @@
 "use client";
+import { assumptionExport } from "@/lib/assumptions";
 import { AssumptionShortcuts } from "@/components/assumption-shortcuts";
 import { CreateProjectForm } from "@/components/create-project-form";
 import { FinancialDataTable } from "@/components/financial-data-table";
@@ -20,7 +21,7 @@ import {
   YAxis,
 } from "recharts";
 import { apiDownload, apiPost, apiUpload, saveBlob } from "@/lib/api";
-import { useWorkspace } from "@/lib/workspace";
+import { persistenceCopy, useWorkspace } from "@/lib/workspace";
 import {
   payloadFor,
   settingsFor,
@@ -245,6 +246,12 @@ export function ForecastingPage() {
             </select>
           </label>
         </div>
+        <Link
+          className="my-3 inline-block text-teal"
+          href="/workspace#assumption-analysis"
+        >
+          Review document assumptions
+        </Link>
         <AssumptionShortcuts kind="forecast" />
         <NumberInputs
           values={s.forecast}
@@ -544,6 +551,12 @@ export function ModelsPage() {
         title="Valuation Models"
         description="Independent models. Money in actual currency units; diluted shares in actual shares. Rates are decimals."
       />
+      <Link
+        className="mb-3 inline-block text-teal"
+        href="/workspace#assumption-analysis"
+      >
+        Review document assumptions
+      </Link>
       <Card>
         <h2 className="mb-4">Equity bridge and market reference</h2>
         <NumberInputs
@@ -674,6 +687,12 @@ export function ModelsPage() {
               </p>
             ) : (
               <>
+                <Link
+                  className="my-3 inline-block text-teal"
+                  href="/workspace#assumption-analysis"
+                >
+                  Review document assumptions
+                </Link>
                 <AssumptionShortcuts kind="dcf" />
                 <p className="my-4 text-mist">
                   Standalone DCF. Blank opening NWC uses base revenue ×
@@ -999,10 +1018,10 @@ export function ResultsPage() {
     setBusy(true);
     setExportError("");
     try {
-      const f = await apiDownload(
-        "/v1/workbench/export",
-        payloadFor(workspace),
-      );
+      const f = await apiDownload("/v1/workbench/export", {
+        ...payloadFor(persistenceCopy(workspace)),
+        assumption_sources: assumptionExport(workspace),
+      });
       saveBlob(f.blob, f.filename);
     } catch (e) {
       setExportError(e instanceof Error ? e.message : "Export failed");

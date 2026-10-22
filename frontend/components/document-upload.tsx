@@ -12,6 +12,7 @@ type UploadItem = {
   error?: string;
 };
 type ProcessResponse = {
+  assumptions?: import("@/lib/assumptions").Assumption[];
   document: Omit<DocumentRecord, "chunks" | "suggestions">;
   chunks: DocumentRecord["chunks"];
   suggestions: DocumentRecord["suggestions"];
@@ -46,9 +47,23 @@ export function DocumentUpload() {
           );
           updateWorkspace((w) =>
             w.documents.some((d) => d.identifier === result.document.identifier)
-              ? w
+              ? {
+                  ...w,
+                  assumptions: [
+                    ...(w.assumptions ?? []),
+                    ...(result.assumptions ?? []).filter(
+                      (a) => !w.assumptions?.some((old) => old.id === a.id),
+                    ),
+                  ],
+                }
               : ensureRecordIds({
                   ...w,
+                  assumptions: [
+                    ...(w.assumptions ?? []),
+                    ...(result.assumptions ?? []).filter(
+                      (a) => !w.assumptions?.some((old) => old.id === a.id),
+                    ),
+                  ],
                   documents: [
                     ...w.documents,
                     {

@@ -18,6 +18,8 @@ PERIOD_RE = re.compile(r"\b(?:19|20)\d{2}\b")
 NUMBER_RE = re.compile(r"(?<!\w)\(?(?:\$|€|£)?-?\d[\d,]*(?:\.\d+)?\)?")
 
 METRIC_ALIASES = {
+    "pretax_income": ("pretax income", "profit before tax", "income before tax", "pretax_income"),
+    "dividend_per_share": ("dividend per share", "dividend_per_share"),
     "depreciation_amortization": ("depreciation and amortization", "depreciation_amortization"),
     "accounts_receivable": ("accounts receivable", "accounts_receivable"),
     "inventory": ("inventory", "inventories"),
@@ -231,13 +233,19 @@ def search_chunks(query: str, chunks: list[dict[str, Any]], limit: int = 6) -> l
 
 def suggest_financial_figures(pages: list[dict[str, Any]], currency: str = "USD") -> list[dict[str, Any]]:
     """Conservative extraction suggestions for user review; never auto-committed."""
+    from equitylens.assumptions import FORWARD
     suggestions: list[dict[str, Any]] = []
     for page in pages:
         scale, _ = detect_unit_scale(page["text"])
         lines = page["text"].splitlines()
         header = None
         wide_periods = []
+        forward_section = False
         for line in lines:
+            if re.search(r"^(?:FY\s*\d{4}\s+)?(?:guidance|outlook|forecast|projections|budget)\b", line, re.I):
+                forward_section = True
+            if re.search(r"^(historical|actual|reported results)\b", line, re.I):
+                forward_section = False
             cells = next(csv.reader([line])) if "," in line else []
             lowered = [c.strip().lower() for c in cells]
             if "metric" in lowered and "period" in lowered and "value" in lowered:
@@ -245,6 +253,8 @@ def suggest_financial_figures(pages: list[dict[str, Any]], currency: str = "USD"
                 continue
             if header and len(cells) == len(header):
                 row = dict(zip(header, cells))
+                if row.get("classification", "historical reported").lower() != "historical reported" or FORWARD.search(line) or forward_section or row.get("unit", "").lower() in {"%", "percentage", "decimal", "percent"}:
+                    continue
                 value = parse_financial_number(row["value"])
                 if value is not None:
                     raw_metric = row["metric"].strip().lower()
@@ -258,6 +268,8 @@ def suggest_financial_figures(pages: list[dict[str, Any]], currency: str = "USD"
                 continue
             if cells and any(re.fullmatch(r"(?:19|20)\d{2}", c.strip()) for c in cells[1:]) and not any(alias in cells[0].lower() for aliases in METRIC_ALIASES.values() for alias in aliases):
                 wide_periods = [(i,c.strip()) for i,c in enumerate(cells) if re.fullmatch(r"(?:19|20)\d{2}",c.strip())]
+                continue
+            if FORWARD.search(line) or forward_section or "%" in line:
                 continue
             normalized = line.lower()
             matches = [
