@@ -87,6 +87,7 @@ export function historicalCandidates(
       profitabilityMethod(settings) !== "ebitda"
     )
       return false;
+    if(w.assumptionAdoptions?.filter(a=>a.target===p.target).at(-1)?.source_status === "removed") return false;
     return !proposalError(p, w);
   });
 }

@@ -157,6 +157,7 @@ export function applyApproval(
     company_id: workspace.company.id,
     metric: r.metric,
     period: r.period,
+    period_start: r.period_start, period_end: r.period_end, fiscal_calendar: r.fiscal_calendar,
     value: r.value,
     currency: r.currency,
     unit_scale: r.unit_scale,

@@ -12,6 +12,12 @@ from equitylens.workbench import Workbench, evaluate, effective_dcf
 
 
 def export_workbench(p: Workbench, assumption_sources=None) -> bytes:
+    latest={a.target:a for a in assumption_sources or []}
+    for target,a in latest.items():
+        group=target.split('.')[0]
+        active=any([p.forecast,p.dcf,p.wacc,p.ddm,p.assets,p.peers,p.transactions]) if group=='settings' else getattr(p,group,None) if group in {'forecast','dcf','wacc','ddm','assets'} else None
+        if a.source_status=='removed' and active:
+            raise ValueError(f'Source document removed; review {target} before exporting active calculations.')
     result = evaluate(p)
     wb = Workbook()
     wb.remove(wb.active)
@@ -89,7 +95,8 @@ def export_workbench(p: Workbench, assumption_sources=None) -> bytes:
     if result["forecast"]:
         opening = wb.create_sheet("Opening balances")
         opening.append(["Metric", "Actual units", "Fiscal year"])
-        period = max(result["history"])
+        from equitylens.periods import annual_history
+        period = max(annual_history(result["history"]))
         opening_rows = {}
         for key in result["history"][period]:
             r = opening.max_row + 1
@@ -363,7 +370,7 @@ def export_workbench(p: Workbench, assumption_sources=None) -> bytes:
                 "PE",
                 "PB",
                 "PS",
-                "Acquisition date",
+                "Acquisition date", "Reporting basis", "Financial period", "Period end", "Measurement date", "Reviewed", "Validation status",
             ]
         )
         for peer in rows:
@@ -399,10 +406,11 @@ def export_workbench(p: Workbench, assumption_sources=None) -> bytes:
                     r,
                     col,
                     f"=IF(AND(B{r},C{r}='Sources'!$B$1,{den}{r}>0,ISNUMBER({num}{r})),{num}{r}/{den}{r},\"\")"
-                    if title == "Comparables" or col < 17
+                    if model in result["models"] and (title == "Comparables" or col < 17) and not (col == 18 and not result["models"][model]["target"]["balance_date"])
                     else None,
                 )
             sheet.cell(r, 20, peer.acquisition_date)
+            for col,value in enumerate([peer.reporting_basis,peer.financial_period,peer.period_end,peer.measurement_date,peer.basis_reviewed,result['errors'].get(model,'Reviewed distinct observations')],21): sheet.cell(r,col,safe(value) if isinstance(value,str) else value)
         end = sheet.max_row
         stat_rows = {}
         if rows:
@@ -436,14 +444,22 @@ def export_workbench(p: Workbench, assumption_sources=None) -> bytes:
                 "pb": ("total_equity", "R"),
                 "ps": ("revenue", "S"),
             }
-            period = max(result["history"])
+            context=relative['target']
+            target_sheet=wb.create_sheet(title + " target")
+            target_sheet.append(['Metric','Value (actual units)','Reporting basis','Period','Balance date','Original observations'])
+            target_rows={}
+            for metric,value in context['values'].items():
+                source_inputs=context['inputs'].get(metric,[])
+                target_rows[metric]=target_sheet.max_row+1
+                expression='='+ '+'.join(f"SUMIFS('Historical statements'!F2:F{history.max_row},'Historical statements'!A2:A{history.max_row},\"{i['period']}\",'Historical statements'!B2:B{history.max_row},\"{i['metric']}\")" for i in source_inputs) if source_inputs else value
+                target_sheet.append([metric,expression,context['basis'],context['period'],context['balance_date'],safe(str(source_inputs))[:32000]])
             for val in relative["ranges"]:
                 metric, col = metric_map[val["multiple"]]
                 r = sheet.max_row + 1
                 sheet.append(
                     [
                         val["multiple"],
-                        f"=SUMIFS('Historical statements'!F2:F{history.max_row},'Historical statements'!A2:A{history.max_row},\"{period}\",'Historical statements'!B2:B{history.max_row},\"{metric}\")",
+                        f"='{title} target'!B{target_rows[metric]}",
                     ]
                 )
                 adjustment = (

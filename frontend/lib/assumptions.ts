@@ -2,6 +2,7 @@ import type { Workspace } from "./types";
 import { profitabilityMethod, settingsFor } from "./workbench";
 
 export interface Assumption {
+  source_availability?: "removed";
   id: string;
   metric: string;
   value: number | null;
@@ -41,6 +42,10 @@ export interface Assumption {
   }[];
 }
 export interface Adoption {
+  source_status?: "removed" | "analyst_reviewed" | "cleared";
+  removed_at?: string;
+  reviewed_at?: string;
+  removed_documents?: string[];
   mode?: "automatic" | "historical restore";
   input_hash?: string;
   window?: 2 | 3 | 5;
@@ -183,6 +188,8 @@ export function proposalError(p: Proposal, w: Workspace): string | null {
     return "Choose a supported target input.";
   if (!Number.isFinite(p.value))
     return "Enter a numeric proposal; ranges require an explicit point selection.";
+  if (p.source.source_availability === "removed")
+    return "Source document removed; choose a new reviewed source.";
   if (!p.reviewed || !p.period.trim() || !p.rationale.trim())
     return "Confirm scope, units and application period, and explain your selection.";
   if (
@@ -214,7 +221,10 @@ export function proposalError(p: Proposal, w: Workspace): string | null {
     [group, key] = p.target.split(".");
   if (p.target === "forecast.opex_ratio" && profitabilityMethod(s) !== "opex")
     return "Select Use Operating Expenses / Revenue in Forecasting before adopting this input.";
-  if (p.target === "forecast.ebitda_margin" && profitabilityMethod(s) === "opex")
+  if (
+    p.target === "forecast.ebitda_margin" &&
+    profitabilityMethod(s) === "opex"
+  )
     return "The operating expense ratio currently controls EBITDA. Review that input in Forecasting before adopting an EBITDA margin.";
   if (
     (group === "dcf" && s.enabled.forecast && arrays.has(key)) ||
@@ -246,8 +256,8 @@ export function proposalError(p: Proposal, w: Workspace): string | null {
       : key === "nwc_ratio"
         ? -1
         : key === "nwc_pct_revenue"
-        ? -10
-        : 0;
+          ? -10
+          : 0;
     const max =
       ["growth", "nwc_ratio"].includes(key) && group === "forecast"
         ? 1
@@ -380,6 +390,7 @@ export function assumptionExport(w: Workspace) {
 export function redactEvidence(a: Assumption): Assumption {
   // Whitelist metadata so imported extension fields cannot retain hidden source text.
   const keys = [
+    "source_availability",
     "id",
     "metric",
     "value",
@@ -445,6 +456,8 @@ export function validateAssumptions(w: Workspace): void {
   for (const a of rows) {
     if (
       !a ||
+      (a.source_availability !== undefined &&
+        a.source_availability !== "removed") ||
       [
         a.id,
         a.metric,
@@ -507,6 +520,13 @@ export function validateAssumptions(w: Workspace): void {
   }
   for (const a of w.assumptionAdoptions ?? [])
     if (
+      (a.source_status !== undefined &&
+        !["removed", "analyst_reviewed", "cleared"].includes(
+          a.source_status,
+        )) ||
+      (a.removed_documents !== undefined &&
+        (!Array.isArray(a.removed_documents) ||
+          a.removed_documents.some((id) => typeof id !== "string"))) ||
       !Number.isFinite(a.value) ||
       !(
         targetsFor(a.source, w).includes(a.target) ||

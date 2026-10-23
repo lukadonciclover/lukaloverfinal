@@ -77,15 +77,20 @@ def health() -> dict[str, Any]:
 
 @app.post("/v1/financials/analyze")
 def analyze_financials(payload: FinancialAnalysisRequest) -> dict[str, Any]:
+    from equitylens.periods import validate_period_metadata
+    try: validate_period_metadata(payload.figures)
+    except ValueError as exc: raise HTTPException(422,str(exc)) from exc
     issues = data_quality_issues(payload.figures)
     if payload.currency and any(f.currency != payload.currency for f in payload.figures):
         raise HTTPException(422, "Approved figure currency differs from project currency.")
-    blocking = [issue for issue in issues if issue.startswith(("Currency mismatch", "Duplicate figure", "Annual and quarterly", "Unrecognized"))]
+    blocking = [issue for issue in issues if issue.startswith(("Currency mismatch", "Duplicate figure", "Unrecognized"))]
     if blocking:
         raise HTTPException(status_code=422, detail=" ".join(blocking))
+    from equitylens.periods import ttm_figures
     table = analysis_table(payload.figures)
     rows = dataframe_records(table.reset_index())
     return {
+        "ttm": ttm_figures(payload.figures, payload.currency or (payload.figures[0].currency if payload.figures else "USD")),
         "periods": periods_to_metrics(payload.figures),
         "analysis": rows,
         "unavailable_reasons": unavailable_reasons(payload.figures, rows),
@@ -117,7 +122,14 @@ def dcf_valuation(payload: DCFInputs) -> dict[str, Any]:
 
 @app.post("/v1/valuation/comparables")
 def comparable_valuation(payload: ComparablesRequest) -> dict[str, Any]:
-    rows = [row.model_dump() for row in payload.rows]
+    from equitylens.peer_integrity import validate_peers
+    selected=[r for r in payload.rows if r.selected]
+    if selected:
+        try:
+            validate_peers(selected,dict(basis=selected[0].reporting_basis,period=selected[0].financial_period))
+            if len({r.currency for r in selected})>1: raise ValueError("Comparable currency mismatch; review consistent units and currency.")
+        except ValueError as exc: raise HTTPException(422,str(exc)) from exc
+    rows = [row.model_dump() for row in selected]
     calculated = [calculate_multiples(row) for row in rows]
     statistics = peer_statistics(rows)
     return {"multiples": calculated, "statistics": dataframe_index_records(statistics)}
@@ -251,14 +263,23 @@ async def import_peers(file: UploadFile = File(...)):
     if len(content) > MAX_UPLOAD_BYTES:
         raise HTTPException(413, "File exceeds 4 MB.")
     try:
-        frame = pd.read_csv(BytesIO(content)) if suffix == ".csv" else pd.read_excel(BytesIO(content))
+        frame = pd.read_csv(BytesIO(content),dtype=str) if suffix == ".csv" else pd.read_excel(BytesIO(content),dtype=str)
         frame.columns = [str(c).strip().lower().replace(" ", "_") for c in frame.columns]
         if not {"company", "currency", "unit_scale"}.issubset(frame.columns):
             raise ValueError("Required columns: company, currency, unit_scale. Monetary scales cannot be inferred.")
         if len(frame) > 500:
             raise ValueError("Maximum 500 rows per import.")
         rows = json.loads(frame.to_json(orient="records", date_format="iso"))
-        return {"rows": [Peer.model_validate({**r, "selected": False, "acquisition_date": str(r.get("acquisition_date") or "")[:10]}).model_dump() for r in rows]}
+        # Imports remain unselected and require explicit review, including when
+        # a spreadsheet claims its own data has already been verified.
+        parsed=[]
+        for r in rows:
+            for key in ['company_id','ticker','exchange','transaction_id','acquirer','measurement_date','financial_period','period_end','acquisition_date']:
+                if key in r:r[key]=str(r[key] or '')
+                if key in {'measurement_date','period_end','acquisition_date'} and r.get(key): r[key]=r[key].split('T')[0].split(' ')[0]
+            r['reporting_basis']=r.get('reporting_basis') or 'unverified'
+            parsed.append(Peer.model_validate({**r,'selected':False,'basis_reviewed':False,'acquisition_date':str(r.get('acquisition_date') or '')[:10]}).model_dump())
+        return {'rows':parsed}
     except (ValueError, TypeError) as exc:
         raise HTTPException(422, str(exc)) from exc
 

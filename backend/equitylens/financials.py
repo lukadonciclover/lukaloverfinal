@@ -123,18 +123,25 @@ def periods_to_metrics(figures: Sequence[Any]) -> dict[str, dict[str, float | No
 def analysis_table(figures: Sequence[Any]) -> pd.DataFrame:
     periods = periods_to_metrics(figures)
     rows = []
-    previous: dict[str, float | None] | None = None
+    from equitylens.periods import classify, quarter_index
+    previous_by_frequency = {}
     for period in sorted(periods):
-        calculated = calculate_period_metrics(periods[period], previous)
-        first = min(periods)
-        calculated["revenue_cagr"] = cagr(periods[first].get("revenue"), periods[period].get("revenue"), int(period[:4])-int(first[:4])) if period[:4].isdigit() and first[:4].isdigit() else None
+        frequency=classify(period)
+        previous_period=previous_by_frequency.get(frequency)
+        consecutive=previous_period and (int(period)-int(previous_period)==1 if frequency=='annual' else quarter_index(period)-quarter_index(previous_period)==1 if frequency=='quarterly' else False)
+        def calendar(label):
+            return {getattr(f,'fiscal_calendar','') if hasattr(f,'period') else f.get('fiscal_calendar','') for f in figures if (f.period if hasattr(f,'period') else f['period'])==label} - {''}
+        if previous_period and calendar(period) and calendar(previous_period) and calendar(period)!=calendar(previous_period): consecutive=False
+        calculated = calculate_period_metrics(periods[period], periods[previous_period] if consecutive else None)
+        first = min(p for p in periods if classify(p)==frequency)
+        calculated["revenue_cagr"] = cagr(periods[first].get("revenue"), periods[period].get("revenue"), int(period[:4])-int(first[:4])) if frequency=="annual" and not (calendar(first) and calendar(period) and calendar(first)!=calendar(period)) else None
         current = periods[period]
         invested = subtract_if_complete(add_if_complete(current.get("short_term_debt"), current.get("long_term_debt"), current.get("total_equity")), current.get("cash"))
         pretax = subtract_if_complete(current.get("ebit"), current.get("interest_expense"))
         rate = safe_divide(current.get("tax_expense"), pretax) if pretax is not None and pretax > 0 else None
         calculated["return_on_invested_capital"] = safe_divide(current["ebit"]*(1-rate), invested) if rate is not None and 0 <= rate <= 1 and invested is not None and invested > 0 and current.get("ebit") is not None else None
         rows.append({"period": period, **calculated})
-        previous = periods[period]
+        previous_by_frequency[frequency] = period
     return pd.DataFrame(rows).set_index("period") if rows else pd.DataFrame()
 
 

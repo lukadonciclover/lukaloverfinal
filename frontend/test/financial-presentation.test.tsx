@@ -264,3 +264,17 @@ it("labels sensitivity columns as WACC and rows as exit multiples", async () => 
   expect(within(table).getByText("8×")).toBeInTheDocument();
   expect(within(table).getByText("$1,234.00")).toBeInTheDocument();
 });
+
+it("keeps latest ratio cards on the selected reporting frequency", async () => {
+  const w = createBlankWorkspace("Frequency Test");
+  w.figures = ["2025", "2025-Q4"].map(period => ({company_id:w.company.id,metric:"revenue",period,value:100,currency:"USD",unit_scale:1,origin:"user-supplied" as const,notes:""}));
+  w.financialAnalysis = {analysis:[{period:"2025",gross_margin:0.25},{period:"2025-Q4",gross_margin:0.4}],quality_issues:[],formulas:{},input_hash:financialFingerprint(w.figures),created_at:"2026-01-01"};
+  mocks.load.mockResolvedValue(w);
+  render(<WorkspaceProvider><FinancialsPage /></WorkspaceProvider>);
+  await screen.findByRole("heading", {name:"Historical Performance"});
+  expect(screen.getAllByText("25%")).toHaveLength(2);
+  expect(screen.queryByText("40%")).not.toBeInTheDocument();
+  fireEvent.change(screen.getByLabelText("Reporting frequency"),{target:{value:"quarterly"}});
+  expect(screen.getAllByText("40%")).toHaveLength(2);
+  expect(screen.queryByText("25%")).not.toBeInTheDocument();
+});

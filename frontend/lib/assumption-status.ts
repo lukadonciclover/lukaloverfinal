@@ -22,7 +22,10 @@ export function assumptionStatus(w: Workspace, target: string): string {
   const [group, key] = target.split("."),
     s = settingsFor(w),
     value = currentValue(w, target);
-  if(group === "scenarios") return s.edited_inputs?.includes(target) ? "Analyst Assumption - editable scenario adjustment" : "Model Default - editable scenario adjustment";
+  if (group === "scenarios")
+    return s.edited_inputs?.includes(target)
+      ? "Analyst Assumption - editable scenario adjustment"
+      : "Model Default - editable scenario adjustment";
   if (
     group === "forecast" &&
     ((key === "opex_ratio" && profitabilityMethod(s) === "ebitda") ||
@@ -32,6 +35,10 @@ export function assumptionStatus(w: Workspace, target: string): string {
   const record = w.assumptionAdoptions
     ?.filter((a) => a.target === target)
     .at(-1);
+  if (record?.source_status === "removed")
+    return "Source document removed - assumption requires review before active calculation.";
+  if (record?.source_status === "analyst_reviewed")
+    return "Analyst Assumption - explicitly reviewed after source removal";
   if (record && !record.user_modified_at && value === record.value) {
     if (record.source.classification === "management guidance")
       return `Management Guidance - ${record.source.period}`;

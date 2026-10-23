@@ -1,4 +1,5 @@
 "use client";
+import { SourceReview } from "./source-review";
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useWorkspace } from "@/lib/workspace";
@@ -143,6 +144,7 @@ export function HistoricalReferenceControls({
   const summary = operatingSummary(w);
   return (
     <Card className="mb-5">
+      <SourceReview />
       <h2>Historical Starting Assumptions</h2>
       {scope === "forecast" && (
         <div className="my-3 text-sm" aria-live="polite">

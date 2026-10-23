@@ -59,6 +59,7 @@ def project(horizon=5):
             company_id=1,
             metric=k,
             period="2025",
+            period_start="2025-01-01", period_end="2025-12-31", fiscal_calendar="test-calendar",
             value=v,
             currency="USD",
             unit_scale=1000,
@@ -96,6 +97,7 @@ def project(horizon=5):
         peers=[
             Peer(
                 company="Peer",
+                reporting_basis="annual", basis_reviewed=True, financial_period="2025", period_end="2025-12-31", measurement_date="2026-01-01",
                 currency="USD",
                 unit_scale=1000,
                 market_cap=150,
@@ -111,9 +113,10 @@ def project(horizon=5):
         transactions=[
             Peer(
                 company="Target",
+                reporting_basis="annual", basis_reviewed=True, financial_period="2025", period_end="2025-12-31", measurement_date="2026-01-01",
                 currency="USD",
                 unit_scale=1000,
-                acquisition_date="2025-01-01",
+                acquisition_date="2026-01-01",
                 enterprise_value=200,
                 revenue=100,
                 ebitda=20,

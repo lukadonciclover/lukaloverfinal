@@ -1,6 +1,6 @@
 "use client";
 import Link from "next/link";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { useFinancialAnalysis } from "@/lib/use-financial-analysis";
 import { useWorkspace } from "@/lib/workspace";
 import { Button, Card, Notice, PageHeader } from "@/components/ui";
@@ -14,6 +14,7 @@ import {
 } from "@/lib/financial-formatting";
 export function FinancialsPage() {
   const { workspace } = useWorkspace();
+  const [frequency, setFrequency] = useState("annual");
   const {
     loading,
     error,
@@ -39,7 +40,13 @@ export function FinancialsPage() {
       : 1);
   const history = useMemo(() => {
     if (currencyMismatch) return [];
-    const periods = [...new Set(workspace.figures.map((f) => f.period))].sort();
+    const periods = [...new Set(workspace.figures.map((f) => f.period))]
+      .filter((p) =>
+        frequency === "quarterly"
+          ? /^\d{4}-Q[1-4]$/.test(p)
+          : /^\d{4}$/.test(p),
+      )
+      .sort();
     return periods.map((period) => ({
       period,
       ...Object.fromEntries(
@@ -57,8 +64,14 @@ export function FinancialsPage() {
           ]),
       ),
     }));
-  }, [workspace.figures, currencyMismatch]);
-  const analysisRows = currencyMismatch ? [] : (analysis?.analysis ?? []);
+  }, [workspace.figures, currencyMismatch, frequency]);
+  const analysisRows = currencyMismatch
+    ? []
+    : (analysis?.analysis ?? []).filter((r) =>
+        frequency === "quarterly"
+          ? /^\d{4}-Q[1-4]$/.test(String(r.period))
+          : /^\d{4}$/.test(String(r.period)),
+      );
   return (
     <>
       <PageHeader
@@ -77,6 +90,56 @@ export function FinancialsPage() {
           </Button>
         }
       />
+      <label className="mb-4 block">
+        Reporting frequency{" "}
+        <select
+          className="field"
+          value={frequency}
+          onChange={(e) => setFrequency(e.target.value)}
+        >
+          <option value="annual">Annual</option>
+          <option value="quarterly">
+            Quarterly (quarter-on-quarter growth)
+          </option>
+        </select>
+      </label>
+      <details className="mb-4">
+        <summary>Verified trailing twelve months (TTM)</summary>
+        <p>
+          Four consecutive standalone quarters require explicit start/end dates
+          and a consistent fiscal calendar identifier in Financial Data. Year
+          labels do not establish calendar dates.
+        </p>
+        <FinancialDataTable
+          rows={(analysis?.ttm?.figures ?? []).map((r) => ({
+            metric: r.metric,
+            period: `TTM ending ${r.period}`,
+            period_start: r.period_start,
+            period_end: r.period_end,
+            value: r.value,
+          }))}
+        />
+        {analysis?.ttm?.figures.map((r) => (
+          <details key={`${r.metric}:${r.period}`}>
+            <summary>
+              {formatFinancialLabel(r.metric)} - TTM ending {r.period}: source
+              observations
+            </summary>
+            {r.inputs.map((f, i) => (
+              <p key={i}>
+                {f.period}: {formatFinancialLabel(f.metric)} = {f.value} x{" "}
+                {f.unit_scale} {f.currency};{" "}
+                {f.source?.document_name ?? "Manual ledger input"}
+              </p>
+            ))}
+          </details>
+        ))}
+        {analysis?.ttm?.issues.map((issue) => (
+          <p key={issue} className="text-sm text-gold">
+            {formatFinancialMessage(issue)}
+          </p>
+        ))}
+      </details>
       <div className="mb-4 space-y-2" role="status" aria-live="polite">
         <p>
           {loading
@@ -168,7 +231,7 @@ export function FinancialsPage() {
                 </p>
               ) : (
                 <div className="mt-4 grid gap-4 sm:grid-cols-2">
-                  {Object.entries(analysis.analysis.at(-1) ?? {})
+                  {Object.entries(analysisRows.at(-1) ?? {})
                     .filter(([key]) =>
                       [
                         "revenue_growth",
@@ -199,7 +262,7 @@ export function FinancialsPage() {
                         {value === null && (
                           <p className="mt-2 text-xs text-mist">
                             {analysis.unavailable_reasons?.[
-                              String(analysis.analysis.at(-1)?.period)
+                              String(analysisRows.at(-1)?.period)
                             ]?.[key] ??
                               "Required approved inputs are missing or the denominator is not valid. Review Financial Data."}
                           </p>

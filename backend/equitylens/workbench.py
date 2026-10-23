@@ -11,6 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from equitylens.models import DCFInputs, FinancialFigure
 from equitylens.financials import data_quality_issues
+from equitylens.periods import annual_history, target_financials
 from equitylens.valuation import calculate_dcf, calculate_multiples
 
 
@@ -62,6 +63,16 @@ class ForecastAssumptions(Inputs):
 
 
 class Peer(Inputs):
+    company_id: str = ""
+    ticker: str = ""
+    exchange: str = ""
+    transaction_id: str = ""
+    acquirer: str = ""
+    measurement_date: str = ""
+    financial_period: str = ""
+    period_end: str = ""
+    reporting_basis: Literal["unverified", "annual", "ttm", "forward"] = "unverified"
+    basis_reviewed: bool = False
     company: str
     selected: bool = True
     currency: str
@@ -145,7 +156,19 @@ class WorkbenchDCF(DCFInputs):
     debt: float | None = None
 
 
+class ForwardTarget(Inputs):
+    reviewed: bool = False
+    currency: str
+    period: str
+    balance_date: str = ""
+    metrics: dict[str, float] = Field(default_factory=dict)
+
+
 class Workbench(Inputs):
+    relative_basis: Literal["annual", "ttm", "forward"] = "annual"
+    forward_target: ForwardTarget | None = None
+    blocked_assumptions: list[str] = Field(default_factory=list)
+
     currency: str = Field(pattern=r"^[A-Z]{3}$")
     figures: list[FinancialFigure] = Field(default_factory=list, max_length=10000)
     forecast: ForecastAssumptions | None = None
@@ -176,8 +199,10 @@ class Workbench(Inputs):
 
 
 def normalized_history(p: Workbench) -> dict[str, dict[str, float]]:
+    from equitylens.periods import validate_period_metadata
+    validate_period_metadata(p.figures)
     issues = data_quality_issues(p.figures)
-    blocking = [v for v in issues if not v.startswith(("Mixed unit", "Capital expenditure", "Non-positive"))]
+    blocking = [v for v in issues if not v.startswith(("Mixed unit", "Capital expenditure", "Non-positive", "Annual and quarterly"))]
     if any(f.currency != p.currency for f in p.figures):
         blocking.append("Financial currency must match project currency; convert explicitly before import.")
     if blocking:
@@ -201,6 +226,8 @@ def normalized_history(p: Workbench) -> dict[str, dict[str, float]]:
 def forecast_statements(history: dict, a: ForecastAssumptions) -> list[dict]:
     if not history:
         raise ValueError("Forecast requires approved historical financial data.")
+    history = annual_history(history)
+    if not history: raise ValueError("Annual forecast requires compatible annual opening statements; quarterly revenue is not an annual base.")
     period = max(history)
     if len(period) != 4:
         raise ValueError("Forecast requires annual financial statements.")
@@ -291,7 +318,12 @@ def forecast_statements(history: dict, a: ForecastAssumptions) -> list[dict]:
 
 
 def relative_valuation(rows: list[Peer], target: dict, p: Workbench, transactions=False) -> dict:
+    from equitylens.peer_integrity import validate_peers
+    validate_peers(rows, target, transactions)
+    context=target
+    target=context['values']
     calculated = []
+    warnings=list(context.get("issues",[]))
     keys = {
         "ev_revenue": "revenue",
         "ev_ebitda": "ebitda",
@@ -324,6 +356,9 @@ def relative_valuation(rows: list[Peer], target: dict, p: Workbench, transaction
             for k, v in row.items()
         }
         multiples = calculate_multiples(row)
+        if multiples.get('pb') is not None and (not context['balance_date'] or not peer.period_end):
+            multiples['pb']=None
+            warnings.append(f'{peer.company}: P/B requires verified target and peer balance-sheet dates.')
         calculated.append({"company": peer.company, **{k: multiples[k] for k in keys}})
     stats, ranges = {}, []
     for k, metric in keys.items():
@@ -334,6 +369,7 @@ def relative_valuation(rows: list[Peer], target: dict, p: Workbench, transaction
             median=median(values), average=mean(values), minimum=min(values), maximum=max(values), count=len(values)
         )
         if target.get(metric, 0) <= 0:
+            warnings.append(f"{k}: compatible positive target {metric} unavailable; supply {context['basis']} observations.")
             continue
         bridge = 0
         if k.startswith("ev_"):
@@ -352,10 +388,12 @@ def relative_valuation(rows: list[Peer], target: dict, p: Workbench, transaction
             )
         )
     return {
+        "target": context,
+        "warnings": warnings,
         "multiples": calculated,
         "statistics": stats,
         "ranges": ranges,
-        "note": "Non-positive or missing denominators are excluded. EV methods require an explicit cash/debt bridge.",
+        "note": "Statistics use distinct selected observations on the reviewed reporting basis. Non-positive or missing denominators are excluded. EV methods require an explicit cash/debt bridge.",
     }
 
 
@@ -380,7 +418,7 @@ def effective_dcf(p: Workbench, history: dict, forecasts: list) -> DCFInputs:
         if not forecasts:
             raise ValueError("Resolve forecast validation before calculating the linked DCF.")
         a = p.forecast
-        b = history[max(history)]
+        b = annual_history(history)[max(annual_history(history))]
         margin = a.gross_margin - a.opex_ratio if a.opex_ratio is not None else a.ebitda_margin
         d = d.model_copy(
             update=dict(
@@ -403,6 +441,7 @@ def effective_dcf(p: Workbench, history: dict, forecasts: list) -> DCFInputs:
 
 
 def evaluate(p: Workbench) -> dict:
+    if p.blocked_assumptions: raise ValueError("Source document removed; review or clear affected assumptions before calculation: " + ", ".join(p.blocked_assumptions))
     history = normalized_history(p)
     output = {
         "currency": p.currency,
@@ -482,10 +521,10 @@ def evaluate(p: Workbench) -> dict:
                                 row.append(None)
                         values.append(row)
                     output["sensitivities"][kind] = dict(columns=xs, rows=ys, values=values)
-    target = history[max(history)] if history else {}
+    target = None
     for name, enabled, fn in [
-        ("Trading comparables", bool(p.peers), lambda: relative_valuation(p.peers, target, p)),
-        ("Precedent transactions", bool(p.transactions), lambda: relative_valuation(p.transactions, target, p, True)),
+        ("Trading comparables", bool(p.peers), lambda: relative_valuation(p.peers, target_financials(p, history), p)),
+        ("Precedent transactions", bool(p.transactions), lambda: relative_valuation(p.transactions, target_financials(p, history), p, True)),
         ("DDM", p.ddm is not None, lambda: calculate_ddm(p.ddm)),
         ("Asset based", p.assets is not None, lambda: calculate_assets(p.assets, p.shares)),
     ]:

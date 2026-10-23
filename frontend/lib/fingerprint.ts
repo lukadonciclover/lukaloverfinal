@@ -27,7 +27,7 @@ export function valuationFingerprint(workspace: Workspace): string {
 }
 
 export function financialFingerprint(figures: FinancialFigure[]): string {
-  return fingerprint(figures.map(({company_id,metric,period,value,currency,unit_scale,notes}) => ({company_id,metric,period,value,currency,unit_scale,definition: ["operating_expenses", "interest_expense"].includes(metric) ? notes : ""})).sort((a,b)=>JSON.stringify(a).localeCompare(JSON.stringify(b))));
+  return fingerprint(figures.map(({company_id,metric,period,value,currency,unit_scale,notes,period_start,period_end,fiscal_calendar}) => ({company_id,metric,period,value,currency,unit_scale,period_start,period_end,fiscal_calendar,definition: ["operating_expenses", "interest_expense"].includes(metric) ? notes : ""})).sort((a,b)=>JSON.stringify(a).localeCompare(JSON.stringify(b))));
 }
 
 // Compatibility check for stored pre-workbench DCF snapshots.

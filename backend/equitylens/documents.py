@@ -274,7 +274,7 @@ def suggest_financial_figures(pages: list[dict[str, Any]], currency: str = "USD"
                     matches = [(len(alias),key) for key,aliases in METRIC_ALIASES.items() for alias in (*aliases,key) if alias in raw_metric]
                     metric = max(matches, default=(0,raw_metric))[1]
                     raw_scale = parse_financial_number(row.get("unit_scale", ""))
-                    suggestions.append(dict(metric=metric, period=row["period"].strip(), value=value,
+                    suggestions.append(dict(metric=metric, period=row["period"].strip(), value=value, period_start=row.get("period_start", ""), period_end=row.get("period_end", ""), fiscal_calendar=row.get("fiscal_calendar", ""),
                         currency=row.get("currency", currency).strip().upper(), unit_scale=raw_scale or scale,
                         page=page["page"], quote=line[:500], confidence=.8,
                         units_confirmed=raw_scale is not None, currency_confirmed=bool(row.get("currency"))))

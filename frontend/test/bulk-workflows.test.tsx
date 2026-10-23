@@ -261,12 +261,12 @@ it("applies annual assumptions, copies previous year and confirms resets", async
   expect(screen.getByText("Last growth: 0.1")).toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "Copy Previous Year" }));
   fireEvent.click(
-    screen.getByRole("button", { name: "Reset to Current Saved Assumptions" }),
+    screen.getByRole("button", { name: "Reset to Page-Opening Snapshot" }),
   );
   fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
   expect(screen.getByText("First growth: 0.1")).toBeInTheDocument();
   fireEvent.click(
-    screen.getByRole("button", { name: "Reset to Current Saved Assumptions" }),
+    screen.getByRole("button", { name: "Reset to Page-Opening Snapshot" }),
   );
   fireEvent.click(screen.getByRole("button", { name: "Reset Assumptions" }));
   expect(screen.getByText("First growth: null")).toBeInTheDocument();

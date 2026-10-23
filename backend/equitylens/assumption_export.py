@@ -47,6 +47,10 @@ class AcceptedSource(BaseModel):
     rationale: str
     classification: str
     accepted_at: str
+    source_status: str | None = None
+    removed_at: str | None = None
+    reviewed_at: str | None = None
+    removed_documents: list[str] = Field(default_factory=list)
     mode: str | None = None
     user_modified_at: str | None = None
 
@@ -78,7 +82,13 @@ def source_rows(p: Workbench, sources: list[AcceptedSource], result: dict | None
             current = current[int(parts[2])] if len(parts) == 3 and parts[2].isdigit() and int(parts[2]) < len(current) else None
         if not isinstance(current, (float, int)):
             current = None
-        if obj is None:
+        if a.source_status == "removed":
+            status = "Superseded; original source removed" if latest[a.target] != i else "Removed source; invalidated assumption requires review"
+        elif a.source_status == "analyst_reviewed":
+            status = "User-reviewed analyst assumption; original source removed" if latest[a.target] == i and current == a.value else "Superseded analyst assumption; original source removed"
+        elif a.source_status == "cleared":
+            status = "Cleared input; original source removed"
+        elif obj is None:
             status = "Model disabled / unavailable"
         elif latest[a.target] != i or current != a.value:
             status = "Superseded; not current model input"
@@ -94,6 +104,6 @@ def source_rows(p: Workbench, sources: list[AcceptedSource], result: dict | None
         original = s.original.model_dump() if s.original else s.model_dump()
         rows.append([s.metric,a.target,a.value,current,status,a.period,a.classification,original.get("value"),original.get("minimum"),original.get("maximum"),
             original.get("unit"),original.get("currency"),original.get("unit_scale"),s.period,s.basis,s.scope,s.classification,s.document_id,s.document_name,s.page,
-            s.excerpt or "Source text unavailable",a.rationale,a.accepted_at,"User-modified after prefill" if a.user_modified_at else "Automatic historical prefill" if a.mode=="automatic" else "Restored historical reference" if a.mode else "Accepted",
+            ("Source removed; text unavailable" if a.source_status else s.excerpt or "Source text unavailable"),a.rationale,a.accepted_at,"User-modified after prefill" if a.user_modified_at else "Automatic historical prefill" if a.mode=="automatic" else "Restored historical reference" if a.mode else "Accepted",
             "; ".join(f"{i.period}: {i.metric} = {i.value} x {i.unit_scale} {i.currency} ({i.document_id or 'manual ledger input'})" for i in s.inputs)])
     return rows

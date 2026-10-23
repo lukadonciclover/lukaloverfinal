@@ -1,5 +1,5 @@
 "use client";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { apiUpload } from "@/lib/api";
 import { useWorkspace } from "@/lib/workspace";
 import { ensureRecordIds } from "@/lib/bulk-approval";
@@ -18,7 +18,14 @@ type ProcessResponse = {
   suggestions: DocumentRecord["suggestions"];
 };
 export function DocumentUpload() {
-  const { workspace, updateWorkspace } = useWorkspace();
+  const { workspace, project, updateWorkspace } = useWorkspace();
+  const request = useRef<AbortController | null>(null);
+  useEffect(
+    () => () => {
+      request.current?.abort();
+    },
+    [project.id],
+  );
   const [queue, setQueue] = useState<UploadItem[]>([]),
     [busy, setBusy] = useState(false);
   const busyRef = useRef(false),
@@ -28,12 +35,15 @@ export function DocumentUpload() {
     busyRef.current = true;
     setBusy(true);
     const currency = workspace.company.currency;
+    request.current = new AbortController();
+    const signal = request.current.signal;
     const update = (id: string, status: UploadItem["status"], error?: string) =>
       setQueue((old) =>
         old.map((row) => (row.id === id ? { ...row, status, error } : row)),
       );
     try {
       for (const item of items) {
+        if (signal.aborted) break;
         update(item.id, "Processing");
         try {
           if (item.file.size > 4 * 1024 * 1024)
@@ -44,35 +54,41 @@ export function DocumentUpload() {
           const result = await apiUpload<ProcessResponse>(
             "/v1/documents/process",
             form,
+            { signal },
           );
+          if (signal.aborted) return;
           updateWorkspace((w) =>
-            w.documents.some((d) => d.identifier === result.document.identifier)
-              ? {
-                  ...w,
-                  assumptions: [
-                    ...(w.assumptions ?? []),
-                    ...(result.assumptions ?? []).filter(
-                      (a) => !w.assumptions?.some((old) => old.id === a.id),
-                    ),
-                  ],
-                }
-              : ensureRecordIds({
-                  ...w,
-                  assumptions: [
-                    ...(w.assumptions ?? []),
-                    ...(result.assumptions ?? []).filter(
-                      (a) => !w.assumptions?.some((old) => old.id === a.id),
-                    ),
-                  ],
-                  documents: [
-                    ...w.documents,
-                    {
-                      ...result.document,
-                      chunks: result.chunks,
-                      suggestions: result.suggestions,
-                    },
-                  ],
-                }),
+            w.company.currency !== currency
+              ? w
+              : w.documents.some(
+                    (d) => d.identifier === result.document.identifier,
+                  )
+                ? {
+                    ...w,
+                    assumptions: [
+                      ...(w.assumptions ?? []),
+                      ...(result.assumptions ?? []).filter(
+                        (a) => !w.assumptions?.some((old) => old.id === a.id),
+                      ),
+                    ],
+                  }
+                : ensureRecordIds({
+                    ...w,
+                    assumptions: [
+                      ...(w.assumptions ?? []),
+                      ...(result.assumptions ?? []).filter(
+                        (a) => !w.assumptions?.some((old) => old.id === a.id),
+                      ),
+                    ],
+                    documents: [
+                      ...w.documents,
+                      {
+                        ...result.document,
+                        chunks: result.chunks,
+                        suggestions: result.suggestions,
+                      },
+                    ],
+                  }),
           );
           update(item.id, "Processed");
         } catch (reason) {

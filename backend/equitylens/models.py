@@ -65,6 +65,9 @@ class FinancialFigure(BaseModel):
     id: int | None = None
     company_id: int
     metric: str
+    period_start: str = ""
+    period_end: str = ""
+    fiscal_calendar: str = ""
     period: str
     value: float | None = None
     currency: str = "USD"

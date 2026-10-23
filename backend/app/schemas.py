@@ -5,6 +5,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from equitylens.models import FinancialFigure
+from equitylens.workbench import Peer
 
 class EvidenceChunkInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -23,16 +24,8 @@ class FinancialAnalysisRequest(BaseModel):
     figures: list[FinancialFigure]
 
 
-class ComparableRow(BaseModel):
-    company: str
-    market_cap: float | None = None
-    debt: float | None = None
-    cash: float | None = None
-    enterprise_value: float | None = None
-    revenue: float | None = None
-    ebitda: float | None = None
-    ebit: float | None = None
-    net_income: float | None = None
+class ComparableRow(Peer):
+    pass
 
 
 class ComparablesRequest(BaseModel):

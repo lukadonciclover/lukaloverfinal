@@ -1,4 +1,5 @@
-export type ValueOrigin = "reported" | "derived" | "user-supplied" | "ai-estimate";
+export type ValueOrigin =
+  "reported" | "derived" | "user-supplied" | "ai-estimate";
 
 export interface Company {
   id: number;
@@ -31,6 +32,9 @@ export interface SourceRef {
 }
 
 export interface FinancialFigure {
+  period_start?: string;
+  period_end?: string;
+  fiscal_calendar?: string;
   record_id?: string;
   id?: number | null;
   company_id: number;
@@ -55,6 +59,9 @@ export interface EvidenceChunk {
 }
 
 export interface FigureSuggestion {
+  period_start?: string;
+  period_end?: string;
+  fiscal_calendar?: string;
   record_id?: string;
   units_confirmed?: boolean;
   currency_confirmed?: boolean;
@@ -110,7 +117,11 @@ export interface DCFResult {
   upside_downside: number | null;
   timing_convention: string;
   scenarios: Record<string, DCFResult>;
-  sensitivity: { rows: string[]; columns: string[]; values: Array<Array<number | null>> };
+  sensitivity: {
+    rows: string[];
+    columns: string[];
+    values: Array<Array<number | null>>;
+  };
 }
 
 export interface Comparable {
@@ -144,7 +155,8 @@ export interface AgentRun {
   created_at: string;
 }
 
-export type ClaimStatus = "verified" | "partially_supported" | "unsupported" | "contradicted";
+export type ClaimStatus =
+  "verified" | "partially_supported" | "unsupported" | "contradicted";
 
 export interface ClaimCitation {
   source_id: string;
@@ -189,9 +201,20 @@ export interface Experiment {
 }
 
 export interface FinancialAnalysisSnapshot {
+  ttm?: {
+    figures: {
+      metric: string;
+      period: string;
+      value: number;
+      period_start: string;
+      period_end: string;
+      inputs: FinancialFigure[];
+    }[];
+    issues: string[];
+  };
   unit_scale?: number;
   currency?: string;
-  unavailable_reasons?: Record<string, Record<string,string>>;
+  unavailable_reasons?: Record<string, Record<string, string>>;
   analysis: Array<Record<string, number | string | null>>;
   quality_issues: string[];
   formulas: Record<string, string>;
@@ -241,7 +264,10 @@ export interface Workspace {
   reportSnapshot: ReportSnapshot | null;
   workflow: WorkflowState;
   settings: {
-    mode: "Manual AI Mode" | "Configured External Inference" | "Financial Analytics Only";
+    mode:
+      | "Manual AI Mode"
+      | "Configured External Inference"
+      | "Financial Analytics Only";
     persistDocumentText: boolean;
   };
 }

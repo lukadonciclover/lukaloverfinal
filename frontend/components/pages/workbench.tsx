@@ -1,4 +1,6 @@
 "use client";
+import { previewPeers, importNewPeers } from "@/lib/peer-import";
+import { ConfirmationDialog } from "@/components/confirmation-dialog";
 import { AssumptionNumber } from "@/components/assumption-number";
 import { assumptionStatus } from "@/lib/assumption-status";
 import { HistoricalReferenceControls } from "@/components/historical-reference-controls";
@@ -15,7 +17,7 @@ import {
   financialInputHint,
 } from "@/lib/financial-formatting";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Bar,
   BarChart,
@@ -41,9 +43,10 @@ import { Button, Card, Field, Notice, PageHeader } from "@/components/ui";
 const label = formatFinancialLabel;
 const DataTable = FinancialDataTable;
 function useModel() {
-  const { workspace, updateWorkspace } = useWorkspace();
+  const { workspace, project, updateWorkspace } = useWorkspace();
   const settings = settingsFor(workspace),
-    serialized = JSON.stringify(payloadFor(workspace));
+    serialized = JSON.stringify(payloadFor(workspace)),
+    requestKey = `${project.id}:${serialized}`;
   const [snapshot, setSnapshot] = useState<{
     key: string;
     value: WorkbenchResult;
@@ -60,7 +63,7 @@ function useModel() {
       )
         .then((value) => {
           if (!controller.signal.aborted)
-            setSnapshot({ key: serialized, value });
+            setSnapshot({ key: requestKey, value });
         })
         .catch((e) => {
           if (!controller.signal.aborted)
@@ -71,7 +74,7 @@ function useModel() {
       window.clearTimeout(timer);
       controller.abort();
     };
-  }, [serialized]);
+  }, [serialized, requestKey]);
   const update = (fn: (s: WorkbenchSettings) => WorkbenchSettings) =>
     updateWorkspace((w) => ({ ...w, valuationWorkbench: fn(settingsFor(w)) }));
   return {
@@ -79,7 +82,7 @@ function useModel() {
     updateWorkspace,
     settings,
     update,
-    result: snapshot?.key === serialized ? snapshot.value : null,
+    result: snapshot?.key === requestKey ? snapshot.value : null,
     error,
   };
 }
@@ -357,6 +360,22 @@ function PeerEditor({
   transactions: boolean;
   change: (rows: PeerInput[]) => void;
 }) {
+  const { project, workspace } = useWorkspace();
+  const latest = useRef({ id: project.id, revision: workspace.revision });
+  latest.current = { id: project.id, revision: workspace.revision };
+  const controller = useRef<AbortController | null>(null);
+  const [preview, setPreview] = useState<{
+    id: string;
+    revision: number;
+    rows: PeerInput[];
+  } | null>(null);
+  const [replacement, setReplacement] = useState<number | null>(null);
+  useEffect(
+    () => () => {
+      controller.current?.abort();
+    },
+    [project.id],
+  );
   const [error, setError] = useState("");
   const [query, setQuery] = useState("");
   const visible = (row: PeerInput) =>
@@ -374,17 +393,41 @@ function PeerEditor({
     "book_equity",
   ] as const;
   const edit = (i: number, k: keyof PeerInput, value: unknown) =>
-    change(rows.map((r, n) => (n === i ? { ...r, [k]: value } : r)));
+    change(
+      rows.map((r, n) =>
+        n === i
+          ? {
+              ...r,
+              [k]: value,
+              ...(k !== "selected" && k !== "basis_reviewed"
+                ? { basis_reviewed: false }
+                : {}),
+            }
+          : r,
+      ),
+    );
   async function upload(file: File | undefined) {
     if (!file) return;
     try {
+      controller.current?.abort();
+      controller.current = new AbortController();
+      const signal = controller.current.signal,
+        captured = { ...latest.current };
       const form = new FormData();
       form.append("file", file);
       const data = await apiUpload<{ rows: PeerInput[] }>(
         "/v1/workbench/import-peers",
         form,
+        { signal },
       );
-      change([...rows, ...data.rows]);
+      if (signal.aborted || latest.current.id !== captured.id) return;
+      if (latest.current.revision !== captured.revision) {
+        setError(
+          "Project changed during import; upload again for a fresh preview.",
+        );
+        return;
+      }
+      setPreview({ ...captured, rows: data.rows });
       setError("");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Import failed");
@@ -392,6 +435,116 @@ function PeerEditor({
   }
   return (
     <>
+      {preview && (
+        <Card className="mb-4">
+          <h3>Import preview</h3>
+          <p>
+            New records are imported unselected. Duplicates and conflicts
+            require review; existing rows are preserved.
+          </p>
+          {previewPeers(rows, preview.rows, transactions).map((r, i) => (
+            <div key={i} className="my-2">
+              <span>
+                {r.row.company}: {r.status} -{" "}
+                {r.row.financial_period || "period missing"},{" "}
+                {r.row.reporting_basis || "unverified"}
+              </span>
+              <details>
+                <summary>Inspect imported values</summary>
+                <pre className="max-h-48 overflow-auto">
+                  {JSON.stringify(r.row, null, 2)}
+                </pre>
+              </details>
+              {r.status === "conflict" && (
+                <Button variant="secondary" onClick={() => setReplacement(i)}>
+                  Review Conflict / Use Imported Record
+                </Button>
+              )}
+            </div>
+          ))}
+          <Button
+            onClick={() => {
+              if (
+                latest.current.id !== preview.id ||
+                latest.current.revision !== preview.revision
+              ) {
+                setError("Project changed; upload again for a fresh preview.");
+                setPreview(null);
+                return;
+              }
+              change(importNewPeers(rows, preview.rows, transactions));
+              setPreview(null);
+            }}
+          >
+            Import New Records / Skip Duplicates
+          </Button>
+          <Button
+            variant="secondary"
+            onClick={() => {
+              setPreview(null);
+              setReplacement(null);
+            }}
+          >
+            Cancel Import
+          </Button>
+        </Card>
+      )}
+      {preview && replacement !== null && (
+        <ConfirmationDialog
+          title="Replace existing observation?"
+          confirmLabel="Replace Reviewed Record"
+          onCancel={() => setReplacement(null)}
+          onConfirm={() => {
+            if (
+              latest.current.id !== preview.id ||
+              latest.current.revision !== preview.revision
+            ) {
+              setError("Project changed; review a fresh import.");
+              setReplacement(null);
+              setPreview(null);
+              return;
+            }
+            const item = previewPeers(rows, preview.rows, transactions)[
+              replacement
+            ];
+            if (item.existingIndex >= 0)
+              change(
+                rows.map((r, i) =>
+                  i === item.existingIndex
+                    ? { ...item.row, selected: false, basis_reviewed: false }
+                    : r,
+                ),
+              );
+            else
+              change([
+                ...rows,
+                { ...item.row, selected: false, basis_reviewed: false },
+              ]);
+            setReplacement(null);
+            setPreview(null);
+          }}
+        >
+          <p>
+            Use these imported values for this observation, replacing its
+            existing record if present? It will be unselected and require basis
+            review.
+          </p>
+          <pre className="max-h-64 overflow-auto">
+            {JSON.stringify(
+              {
+                existing:
+                  rows[
+                    previewPeers(rows, preview.rows, transactions)[replacement]
+                      .existingIndex
+                  ],
+                imported: preview.rows[replacement],
+              },
+              null,
+              2,
+            )}
+          </pre>
+        </ConfirmationDialog>
+      )}
       <div className="my-4 flex flex-wrap gap-4">
         <Button
           variant="secondary"
@@ -486,6 +639,7 @@ function PeerEditor({
               <th>Include</th>
               <th>Company</th>
               <th>Currency</th>
+              <th>Identity and reporting basis</th>
               {transactions && <th>Acquisition date</th>}
               {numeric.map((k) => (
                 <th key={k}>{label(k)}</th>
@@ -522,6 +676,62 @@ function PeerEditor({
                         edit(i, "currency", e.target.value.toUpperCase())
                       }
                     />
+                  </td>
+                  <td className="min-w-56">
+                    {(
+                      [
+                        "company_id",
+                        "ticker",
+                        "exchange",
+                        "financial_period",
+                        "period_end",
+                        "measurement_date",
+                        ...(transactions ? ["transaction_id", "acquirer"] : []),
+                      ] as const
+                    ).map((k) => (
+                      <Field
+                        key={k}
+                        label={`${label(k)} row ${i + 1}`}
+                        type={
+                          k.endsWith("date") || k === "period_end"
+                            ? "date"
+                            : "text"
+                        }
+                        value={
+                          (r as unknown as Record<string, string>)[k] ?? ""
+                        }
+                        onChange={(e) => {
+                          edit(i, k as keyof PeerInput, e.target.value);
+                        }}
+                      />
+                    ))}
+                    <label>
+                      Reporting basis
+                      <select
+                        className="field"
+                        aria-label={`Reporting basis row ${i + 1}`}
+                        value={r.reporting_basis ?? "unverified"}
+                        onChange={(e) =>
+                          edit(i, "reporting_basis", e.target.value)
+                        }
+                      >
+                        {["unverified", "annual", "ttm", "forward"].map((v) => (
+                          <option key={v}>{v}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <label>
+                      <input
+                        aria-label={`Confirm reporting basis row ${i + 1}`}
+                        type="checkbox"
+                        checked={r.basis_reviewed ?? false}
+                        onChange={(e) =>
+                          edit(i, "basis_reviewed", e.target.checked)
+                        }
+                      />{" "}
+                      Reviewed complete annual / TTM / forward denominator and
+                      dates
+                    </label>
                   </td>
                   {transactions && (
                     <td>
@@ -607,6 +817,107 @@ export function ModelsPage() {
         Review document assumptions
       </Link>
       <HistoricalReferenceControls scope="valuation" />
+      <Card className="mb-4">
+        <h2>Comparable and transaction target basis</h2>
+        <label>
+          Target financial basis
+          <select
+            className="field"
+            value={s.relative_basis ?? "annual"}
+            onChange={(e) =>
+              update((v) => ({
+                ...v,
+                relative_basis: e.target.value as "annual" | "ttm" | "forward",
+              }))
+            }
+          >
+            <option value="annual">Latest annual</option>
+            <option value="ttm">Verified trailing twelve months</option>
+            <option value="forward">Reviewed forward annual forecast</option>
+          </select>
+        </label>
+        <p className="text-sm text-mist">
+          Selected peer multiples must use the same basis. Quarterly earnings
+          are never treated as annual. P/B uses a dated balance-sheet
+          observation.
+        </p>
+        {s.relative_basis === "forward" && (
+          <div className="grid gap-3 sm:grid-cols-3">
+            {(["period", "balance_date"] as const).map((k) => (
+              <Field
+                key={k}
+                label={`Forward ${label(k)}`}
+                type={k === "balance_date" ? "date" : "text"}
+                value={s.forward_target?.[k] ?? ""}
+                onChange={(e) =>
+                  update((v) => ({
+                    ...v,
+                    forward_target: {
+                      reviewed: false,
+                      currency: workspace.company.currency,
+                      period: "",
+                      balance_date: "",
+                      metrics: {},
+                      ...v.forward_target,
+                      [k]: e.target.value,
+                    },
+                  }))
+                }
+              />
+            ))}
+            {["revenue", "ebitda", "ebit", "net_income", "total_equity"].map(
+              (k) => (
+                <Field
+                  key={k}
+                  label={`Forward ${label(k)} (actual units)`}
+                  type="number"
+                  step="any"
+                  value={s.forward_target?.metrics[k] ?? ""}
+                  onChange={(e) =>
+                    update((v) => {
+                      const f = {
+                        reviewed: false,
+                        currency: workspace.company.currency,
+                        period: "",
+                        balance_date: "",
+                        metrics: {},
+                        ...v.forward_target,
+                      };
+                      const metrics = { ...f.metrics };
+                      if (e.target.value === "") delete metrics[k];
+                      else metrics[k] = Number(e.target.value);
+                      return {
+                        ...v,
+                        forward_target: { ...f, metrics, reviewed: false },
+                      };
+                    })
+                  }
+                />
+              ),
+            )}
+            <label>
+              <input
+                type="checkbox"
+                checked={s.forward_target?.reviewed ?? false}
+                onChange={(e) =>
+                  update((v) => ({
+                    ...v,
+                    forward_target: {
+                      currency: workspace.company.currency,
+                      period: "",
+                      balance_date: "",
+                      metrics: {},
+                      ...v.forward_target,
+                      reviewed: e.target.checked,
+                    },
+                  }))
+                }
+              />{" "}
+              Reviewed forward annual values and compatible forward peer basis
+            </label>
+          </div>
+        )}
+      </Card>
       <Card>
         <h2 className="mb-4">Equity bridge and market reference</h2>
         <NumberInputs
@@ -858,6 +1169,7 @@ export function ModelsPage() {
         )}
         {(tab === "peers" || tab === "transactions") && (
           <PeerEditor
+            key={tab}
             rows={s[tab]}
             currency={workspace.company.currency}
             transactions={tab === "transactions"}
@@ -1060,6 +1372,17 @@ function Results({
               )}
             />
             <p className="mt-3 text-xs text-mist">{m.note}</p>
+            {m.target && (
+              <p>
+                Target: {m.target.basis} - {m.target.period}; balance date:{" "}
+                {m.target.balance_date || "unverified"}
+              </p>
+            )}
+            {m.warnings?.map((v) => (
+              <Notice key={v} kind="warning">
+                {v}
+              </Notice>
+            ))}
           </Card>
         ))}
     </>
@@ -1067,10 +1390,23 @@ function Results({
 }
 export function ResultsPage() {
   const { workspace, settings, result, error } = useModel();
-  const { exportWorkspace, importWorkspace } = useWorkspace();
+  const { exportWorkspace, importWorkspace, project } = useWorkspace();
+  const exportContext = useRef({
+    id: project.id,
+    revision: workspace.revision,
+  });
+  exportContext.current = { id: project.id, revision: workspace.revision };
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
   const [exportError, setExportError] = useState(""),
     [busy, setBusy] = useState(false);
   async function download() {
+    const captured = { ...exportContext.current };
     setBusy(true);
     setExportError("");
     try {
@@ -1078,6 +1414,12 @@ export function ResultsPage() {
         ...payloadFor(persistenceCopy(workspace)),
         assumption_sources: assumptionExport(workspace),
       });
+      if (
+        !mounted.current ||
+        captured.id !== exportContext.current.id ||
+        captured.revision !== exportContext.current.revision
+      )
+        return;
       saveBlob(f.blob, f.filename);
     } catch (e) {
       setExportError(e instanceof Error ? e.message : "Export failed");

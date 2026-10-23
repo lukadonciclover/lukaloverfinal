@@ -162,7 +162,7 @@ export function parseWorkspace(value: unknown, allowSensitiveRetention = true): 
   const figures = value.figures.map((figureValue) => {
     if (!record(figureValue)) throw new Error("A financial figure is malformed.");
     const source = record(figureValue.source) ? figureValue.source : null;
-    const matchedDocument = source ? documents.find((document) => document.name === source.document_name) : null;
+    const matchedDocument = source && documents.filter((document) => document.name === source.document_name).length===1 ? documents.find((document) => document.name === source.document_name) : null;
     return { ...figureValue, company_id: company.id, ...(source ? { source: { ...source, document_identifier: typeof source.document_identifier === "string" ? source.document_identifier : matchedDocument?.identifier ?? "" } } : {}) };
   }) as unknown as Workspace["figures"];
   const workspace = {

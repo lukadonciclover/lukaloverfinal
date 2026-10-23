@@ -2,7 +2,10 @@
 import { useState } from "react";
 import { useWorkspace } from "@/lib/workspace";
 import { settingsFor } from "@/lib/workbench";
-import { formatFinancialLabel } from "@/lib/financial-formatting";
+import {
+  formatFinancialLabel,
+  formatFinancialValue,
+} from "@/lib/financial-formatting";
 import { Button, Field, Select } from "./ui";
 import { ConfirmationDialog } from "./confirmation-dialog";
 const annual = [
@@ -14,7 +17,18 @@ const annual = [
   "nwc_pct_revenue",
 ] as const;
 export function AssumptionShortcuts({ kind }: { kind: "dcf" | "forecast" }) {
-  const { workspace, updateWorkspace } = useWorkspace();
+  const { project } = useWorkspace();
+  return (
+    <ProjectAssumptionShortcuts key={`${project.id}:${kind}`} kind={kind} />
+  );
+}
+function ProjectAssumptionShortcuts({ kind }: { kind: "dcf" | "forecast" }) {
+  const { workspace, project, updateWorkspace } = useWorkspace();
+  const [snapshotProject] = useState(project.id);
+  const [snapshotMethod] = useState(
+    settingsFor(workspace).profitability_method,
+  );
+  const [error, setError] = useState("");
   const [saved] = useState(() =>
     structuredClone(
       kind === "dcf" ? workspace.dcfInputs : settingsFor(workspace).forecast,
@@ -23,7 +37,9 @@ export function AssumptionShortcuts({ kind }: { kind: "dcf" | "forecast" }) {
   const [field, setField] = useState<(typeof annual)[number]>("revenue_growth"),
     [value, setValue] = useState(""),
     [year, setYear] = useState(2),
-    [reset, setReset] = useState(false);
+    [reset, setReset] = useState<{ project: string; revision: number } | null>(
+      null,
+    );
   return (
     <div className="my-4 space-y-3 border border-line p-4">
       <h3>Assumption Shortcuts</h3>
@@ -100,38 +116,102 @@ export function AssumptionShortcuts({ kind }: { kind: "dcf" | "forecast" }) {
           year.
         </p>
       )}
-      <Button variant="secondary" onClick={() => setReset(true)}>
-        Reset to Current Saved Assumptions
+      <Button
+        variant="secondary"
+        onClick={() =>
+          setReset({ project: project.id, revision: workspace.revision })
+        }
+      >
+        Reset to Page-Opening Snapshot
       </Button>
       <p className="text-xs text-mist">
-        Resets to the saved assumptions captured when this page was opened.
-        Changes continue to autosave. Historical financial data is unaffected.
+        Restores the values captured when this page was opened, not the latest
+        autosave. Changes continue to autosave. Historical financial data is
+        unaffected.
       </p>
-      {reset && (
+      {error && <p role="alert">{error}</p>}
+      {reset && reset.project === project.id && (
         <ConfirmationDialog
           title="Reset Assumptions"
           confirmLabel="Reset Assumptions"
-          onCancel={() => setReset(false)}
+          onCancel={() => setReset(null)}
           onConfirm={() => {
+            if (
+              snapshotProject !== project.id ||
+              reset.project !== project.id ||
+              reset.revision !== workspace.revision
+            ) {
+              setError(
+                "Reset unavailable - the project changed since confirmation. Review the differences again.",
+              );
+              setReset(null);
+              return;
+            }
             updateWorkspace((w) =>
-              kind === "dcf"
-                ? {
-                    ...w,
-                    dcfInputs: structuredClone(saved) as typeof w.dcfInputs,
-                  }
-                : {
-                    ...w,
-                    valuationWorkbench: {
-                      ...settingsFor(w),
-                      forecast: structuredClone(saved) as ReturnType<
-                        typeof settingsFor
-                      >["forecast"],
+              w.revision !== reset.revision
+                ? w
+                : kind === "dcf"
+                  ? {
+                      ...w,
+                      dcfInputs: structuredClone(saved) as typeof w.dcfInputs,
+                    }
+                  : {
+                      ...w,
+                      valuationWorkbench: {
+                        ...settingsFor(w),
+                        profitability_method: snapshotMethod,
+                        forecast: structuredClone(saved) as ReturnType<
+                          typeof settingsFor
+                        >["forecast"],
+                      },
                     },
-                  },
             );
-            setReset(false);
+            setReset(null);
           }}
         >
+          <div className="max-h-64 overflow-auto">
+            <table>
+              <thead>
+                <tr>
+                  <th>Input</th>
+                  <th>Current</th>
+                  <th>Page-opening value</th>
+                </tr>
+              </thead>
+              <tbody>
+                {Object.entries(saved)
+                  .filter(
+                    ([, v]) =>
+                      typeof v === "number" || v === null || Array.isArray(v),
+                  )
+                  .map(([key, value]) => (
+                    <tr key={key}>
+                      <td>{formatFinancialLabel(key)}</td>
+                      <td>
+                        {JSON.stringify(
+                          (
+                            (kind === "dcf"
+                              ? workspace.dcfInputs
+                              : settingsFor(workspace)
+                                  .forecast) as unknown as Record<
+                              string,
+                              unknown
+                            >
+                          )[key],
+                        )}
+                      </td>
+                      <td>
+                        {Array.isArray(value)
+                          ? value
+                              .map((v) => formatFinancialValue(key, v))
+                              .join(", ")
+                          : formatFinancialValue(key, value)}
+                      </td>
+                    </tr>
+                  ))}
+              </tbody>
+            </table>
+          </div>
           <p>
             Replace the current {kind === "dcf" ? "DCF" : "forecast"}{" "}
             assumptions with the snapshot captured on opening this page?

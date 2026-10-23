@@ -1,4 +1,8 @@
 "use client";
+import { useState } from "react";
+import { SourceReview } from "@/components/source-review";
+import { ConfirmationDialog } from "@/components/confirmation-dialog";
+import { documentDependencies, removeSource } from "@/lib/source-dependencies";
 import { AssumptionAnalysis } from "@/components/assumption-analysis";
 import { DocumentUpload } from "@/components/document-upload";
 
@@ -43,33 +47,102 @@ export function WorkspacePage() {
       return { ...current, company: { ...current.company, [field]: value } };
     });
 
-  function removeDocument(identifier: string, name: string) {
-    if (!window.confirm(`Remove ${name} and its derived financial figures?`))
-      return;
-    updateWorkspace((current) => ({
-      ...current,
-      assumptions: current.assumptions?.filter(
-        (a) => a.document_id !== identifier,
-      ),
-      documents: current.documents.filter(
-        (item) => item.identifier !== identifier,
-      ),
-      figures: current.figures.filter(
-        (figure) =>
-          !(
-            figure.source?.document_identifier === identifier ||
-            (!figure.source?.document_identifier &&
-              figure.source?.document_name === name)
-          ),
-      ),
-      chats: [],
-      claimAssessments: [],
-    }));
+  const [removal, setRemoval] = useState<{
+    id: string;
+    name: string;
+    project: string;
+    revision: number;
+  } | null>(null);
+  const [removalError, setRemovalError] = useState("");
+  function removeDocument(id: string, name: string) {
+    setRemoval({ id, name, project: project.id, revision: workspace.revision });
   }
+  const dependencies = removal
+    ? documentDependencies(workspace, removal.id)
+    : null;
 
   return (
     <>
       <PageHeader title="Financial Data" />
+      {removalError && <Notice kind="error">{removalError}</Notice>}
+      <SourceReview />
+      {removal && dependencies && removal.project === project.id && (
+        <ConfirmationDialog
+          title="Remove Source Document?"
+          confirmLabel="Remove Source and Flag Dependencies"
+          onCancel={() => setRemoval(null)}
+          onConfirm={() => {
+            if (
+              removal.project !== project.id ||
+              removal.revision !== workspace.revision
+            ) {
+              setRemovalError(
+                "Project changed; review source dependencies again.",
+              );
+              setRemoval(null);
+              return;
+            }
+            if (dependencies.ambiguous) {
+              setRemovalError(
+                "Legacy source names are ambiguous. Assign document identifiers before deletion.",
+              );
+              setRemoval(null);
+              return;
+            }
+            updateWorkspace((w) =>
+              removeSource(w, removal.id, removal.revision),
+            );
+            setRemoval(null);
+          }}
+        >
+          <p>{removal.name}</p>
+          <ul>
+            <li>{dependencies.figures.length} approved figures</li>
+            <li>{dependencies.suggestions} extracted financial suggestions</li>
+            <li>{dependencies.assumptions.length} extracted assumptions</li>
+            <li>{dependencies.references.length} historical references</li>
+            <li>
+              {
+                dependencies.active.filter((a) =>
+                  a.target.startsWith("forecast."),
+                ).length
+              }{" "}
+              active forecasting adoptions
+            </li>
+            <li>
+              {
+                dependencies.active.filter(
+                  (a) => !a.target.startsWith("forecast."),
+                ).length
+              }{" "}
+              active valuation adoptions
+            </li>
+          </ul>
+          <p>
+            Financial results will be invalidated. Dependent values are retained
+            but require review before use. Source excerpts are removed from
+            affected audit records.
+          </p>
+          <details>
+            <summary>Inspect affected records</summary>
+            {dependencies.figures.map((f, i) => (
+              <p key={`f${i}`}>
+                {f.period}: {f.metric} = {f.value}
+              </p>
+            ))}
+            {dependencies.assumptions.map((a) => (
+              <p key={a.id}>
+                {a.metric}: {a.period}
+              </p>
+            ))}
+            {dependencies.active.map((a) => (
+              <p key={a.id}>
+                {a.target}: {a.value} - {a.source.document_name}
+              </p>
+            ))}
+          </details>
+        </ConfirmationDialog>
+      )}
       <Card className="mb-5">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>

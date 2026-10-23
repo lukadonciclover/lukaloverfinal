@@ -1,3 +1,4 @@
+import { activeSourceBlocks } from "./source-dependencies";
 import type { Workspace } from "./types";
 
 export interface ForecastSettings {
@@ -17,6 +18,16 @@ export interface ForecastSettings {
   financing: "revolver" | "none";
 }
 export interface PeerInput {
+  company_id?: string;
+  ticker?: string;
+  exchange?: string;
+  transaction_id?: string;
+  acquirer?: string;
+  measurement_date?: string;
+  financial_period?: string;
+  period_end?: string;
+  reporting_basis?: "unverified" | "annual" | "ttm" | "forward";
+  basis_reviewed?: boolean;
   company: string;
   selected: boolean;
   currency: string;
@@ -33,6 +44,14 @@ export interface PeerInput {
   book_equity: number | null;
 }
 export interface WorkbenchSettings {
+  relative_basis?: "annual" | "ttm" | "forward";
+  forward_target?: {
+    reviewed: boolean;
+    currency: string;
+    period: string;
+    balance_date: string;
+    metrics: Record<string, number>;
+  };
   enabled: {
     forecast: boolean;
     dcf: boolean;
@@ -179,6 +198,9 @@ export function settingsFor(w: Workspace): WorkbenchSettings {
 export function payloadFor(w: Workspace) {
   const s = settingsFor(w);
   return {
+    blocked_assumptions: activeSourceBlocks(w),
+    relative_basis: s.relative_basis ?? "annual",
+    forward_target: s.forward_target ?? null,
     currency: w.company.currency,
     figures: w.figures.map(({ record_id: _recordId, ...figure }) => figure),
     forecast: s.enabled.forecast
@@ -224,6 +246,8 @@ export function payloadFor(w: Workspace) {
 }
 export type NumericRow = Record<string, number | string | null>;
 export interface ModelOutput {
+  warnings?: string[];
+  target?: { basis: string; period: string; balance_date: string };
   forecast?: NumericRow[];
   book_equity?: number;
   terminal_value?: number;

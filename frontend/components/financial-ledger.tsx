@@ -150,6 +150,21 @@ function LedgerContent() {
                         editFigure(figure.record_id!, "period", e.target.value)
                       }
                     />
+                    {(
+                      ["period_start", "period_end", "fiscal_calendar"] as const
+                    ).map((key) => (
+                      <input
+                        key={key}
+                        className="field mt-1 w-36"
+                        aria-label={`${key.replaceAll("_", " ")} row ${index + 1}`}
+                        type={key === "fiscal_calendar" ? "text" : "date"}
+                        placeholder="Fiscal calendar ID"
+                        value={figure[key] ?? ""}
+                        onChange={(e) =>
+                          editFigure(figure.record_id!, key, e.target.value)
+                        }
+                      />
+                    ))}
                   </td>
                   <td>
                     <input
@@ -228,17 +243,42 @@ function LedgerContent() {
                         Modified; original source retained
                       </p>
                     )}
-                    {["interest_expense", "operating_expenses"].includes(figure.metric) && (
+                    {["interest_expense", "operating_expenses"].includes(
+                      figure.metric,
+                    ) && (
                       <label className="mt-2 block whitespace-normal text-xs">
-                        <input type="checkbox"
+                        <input
+                          type="checkbox"
                           aria-label={`Confirm definition row ${index + 1}`}
-                          checked={figure.notes.includes(figure.metric === "interest_expense" ? "[Reviewed: borrowing interest]" : "[Reviewed: excludes depreciation and amortization]")}
-                          onChange={e => {
-                            const marker = figure.metric === "interest_expense" ? "[Reviewed: borrowing interest]" : "[Reviewed: excludes depreciation and amortization]";
+                          checked={figure.notes.includes(
+                            figure.metric === "interest_expense"
+                              ? "[Reviewed: borrowing interest]"
+                              : "[Reviewed: excludes depreciation and amortization]",
+                          )}
+                          onChange={(e) => {
+                            const marker =
+                              figure.metric === "interest_expense"
+                                ? "[Reviewed: borrowing interest]"
+                                : "[Reviewed: excludes depreciation and amortization]";
                             const checked = e.target.checked;
-                            updateWorkspace(w => ({...w, figures:w.figures.map(row => row.record_id === figure.record_id ? {...row,notes:row.notes.replace(marker, "").trim() + (checked ? ` ${marker}` : "")} : row)}));
-                          }} />{" "}
-                        {figure.metric === "interest_expense" ? "Confirmed borrowing interest only; excludes net interest and financing fees" : "Confirmed operating expenses exclude depreciation and amortization"}
+                            updateWorkspace((w) => ({
+                              ...w,
+                              figures: w.figures.map((row) =>
+                                row.record_id === figure.record_id
+                                  ? {
+                                      ...row,
+                                      notes:
+                                        row.notes.replace(marker, "").trim() +
+                                        (checked ? ` ${marker}` : ""),
+                                    }
+                                  : row,
+                              ),
+                            }));
+                          }}
+                        />{" "}
+                        {figure.metric === "interest_expense"
+                          ? "Confirmed borrowing interest only; excludes net interest and financing fees"
+                          : "Confirmed operating expenses exclude depreciation and amortization"}
                       </label>
                     )}
                   </td>
