@@ -16,6 +16,7 @@ import {
   Search,
   X,
 } from "lucide-react";
+import { ProjectSaveStatus } from "@/components/project-save-status";
 import { useProjectPortfolio } from "@/lib/workspace";
 
 export const navigation = [
@@ -160,7 +161,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         </div>
       )}
       <div
-        className={clsx("transition-all", collapsed ? "lg:pl-16" : "lg:pl-64")}
+        className={clsx(collapsed ? "lg:pl-16" : "lg:pl-64")}
       >
         <header className="sticky top-0 z-30 flex h-16 items-center justify-between border-b border-line bg-ink/90 px-4 backdrop-blur sm:px-6">
           <button
@@ -203,6 +204,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           key={activeProjectId}
           className="mx-auto max-w-[1560px] p-4 sm:p-6 lg:p-8"
         >
+          {workspace && <ProjectSaveStatus key={activeProjectId}/>}
           {children}
         </main>
       </div>

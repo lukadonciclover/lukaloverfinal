@@ -241,6 +241,7 @@ export interface WorkflowState {
 }
 
 export interface Workspace {
+  modelExport?: { input_hash: string; created_at: string; filename: string };
   historicalReferences?: import("./historical-references").HistoricalReferences;
   assumptions?: import("./assumptions").Assumption[];
   assumptionAdoptions?: import("./assumptions").Adoption[];

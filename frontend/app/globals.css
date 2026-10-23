@@ -121,3 +121,10 @@ input[type="number"] {
 .recharts-wrapper {
   font-variant-numeric: tabular-nums;
 }
+
+/* Keep workflow panels and wide financial tables inside narrow viewports. */
+[hidden] { display: none !important; }
+main, .panel { min-width: 0; }
+.table-wrap { max-width: 100%; }
+summary { overflow-wrap: anywhere; }
+details:not([open]) > :not(summary) { display: none; }

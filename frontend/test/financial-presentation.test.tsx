@@ -182,6 +182,8 @@ it("keeps review and approval in Financial Data without requesting analysis", as
       <WorkspacePage />
     </WorkspaceProvider>,
   );
+  fireEvent.click(await screen.findByRole("link", { name: "Financial Figures" }));
+  fireEvent.click(screen.getByRole("button", { name: /Pending Review/ }));
   expect(
     await screen.findByRole("heading", {
       name: "Document extraction suggestions",
@@ -196,6 +198,7 @@ it("keeps review and approval in Financial Data without requesting analysis", as
   );
   fireEvent.click(screen.getByRole("button", { name: "Accept" }));
   fireEvent.click(screen.getByRole("button", { name: "Approve Eligible Records" }));
+  fireEvent.click(screen.getByRole("button", { name: /Approved Figures/ }));
   expect(screen.getByRole("spinbutton", { name: "Value row 1" })).toHaveValue(
     125,
   );

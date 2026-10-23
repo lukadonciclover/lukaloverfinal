@@ -26,8 +26,12 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { apiDownload, apiPost, apiUpload, saveBlob } from "@/lib/api";
-import { persistenceCopy, useWorkspace } from "@/lib/workspace";
+import { apiDownload, apiUpload, saveBlob } from "@/lib/api";
+import {
+  previewProjectBackup,
+  persistenceCopy,
+  useWorkspace,
+} from "@/lib/workspace";
 import {
   payloadFor,
   settingsFor,
@@ -35,67 +39,39 @@ import {
   type PeerInput,
   type WorkbenchResult,
   type ModelOutput,
-  type WorkbenchSettings,
-  type NumericRow,
 } from "@/lib/workbench";
 import { Button, Card, Field, Notice, PageHeader } from "@/components/ui";
 
+import { ForecastComparison } from "@/components/forecast-comparison";
+import { ValuationReadiness } from "@/components/valuation-readiness";
+import { workbookFingerprint } from "@/lib/export-fingerprint";
+import { useModel } from "@/lib/use-model";
 const label = formatFinancialLabel;
 const DataTable = FinancialDataTable;
-function useModel() {
-  const { workspace, project, updateWorkspace } = useWorkspace();
-  const settings = settingsFor(workspace),
-    serialized = JSON.stringify(payloadFor(workspace)),
-    requestKey = `${project.id}:${serialized}`;
-  const [snapshot, setSnapshot] = useState<{
-    key: string;
-    value: WorkbenchResult;
-  } | null>(null);
-  const [error, setError] = useState("");
-  useEffect(() => {
-    const controller = new AbortController();
-    setError("");
-    const timer = window.setTimeout(() => {
-      apiPost<WorkbenchResult>(
-        "/v1/workbench/calculate",
-        JSON.parse(serialized),
-        { signal: controller.signal },
-      )
-        .then((value) => {
-          if (!controller.signal.aborted)
-            setSnapshot({ key: requestKey, value });
-        })
-        .catch((e) => {
-          if (!controller.signal.aborted)
-            setError(e instanceof Error ? e.message : "Calculation failed");
-        });
-    }, 300);
-    return () => {
-      window.clearTimeout(timer);
-      controller.abort();
-    };
-  }, [serialized, requestKey]);
-  const update = (fn: (s: WorkbenchSettings) => WorkbenchSettings) =>
-    updateWorkspace((w) => ({ ...w, valuationWorkbench: fn(settingsFor(w)) }));
-  return {
-    workspace,
-    updateWorkspace,
-    settings,
-    update,
-    result: snapshot?.key === requestKey ? snapshot.value : null,
-    error,
-  };
-}
 function Errors({
   result,
   error,
+  loading,
+  retry,
 }: {
   result: WorkbenchResult | null;
   error: string;
+  loading?: boolean;
+  retry?: () => void;
 }) {
   return (
     <div className="my-4 space-y-2" aria-live="polite">
-      {error && <Notice kind="error">{formatFinancialMessage(error)}</Notice>}
+      {loading && <Notice>Calculating current financial inputs…</Notice>}
+      {error && (
+        <Notice kind="error">
+          {formatFinancialMessage(error)}{" "}
+          {retry && (
+            <Button variant="secondary" onClick={retry}>
+              Retry Calculation
+            </Button>
+          )}
+        </Notice>
+      )}
       {Object.entries(result?.errors ?? {}).map(([k, v]) => (
         <Notice kind="warning" key={k}>
           {label(k)}: {formatFinancialMessage(v)}
@@ -174,9 +150,13 @@ export function ValuationDashboard() {
         title="Dashboard"
         actions={<CreateProjectForm />}
       />
+      <ValuationReadiness />
       <div className="grid gap-5 md:grid-cols-3">
         {[
-          ["Company", workspace.company.name],
+          [
+            "Historical periods",
+            String(new Set(workspace.figures.map((f) => f.period)).size),
+          ],
           ["Historical figures", String(workspace.figures.length)],
           ["Project storage", persistenceStatus],
         ].map(([k, v]) => (
@@ -214,7 +194,7 @@ export function ValuationDashboard() {
   );
 }
 export function ForecastingPage() {
-  const { settings: s, update, result, error } = useModel();
+  const { settings: s, update, result, error, loading, retry } = useModel();
   return (
     <>
       <PageHeader
@@ -222,122 +202,153 @@ export function ForecastingPage() {
         title="Forecasting"
         description="Rate inputs are percentages. Monetary inputs and outputs use actual currency units."
       />
-      <HistoricalReferenceControls scope="forecast" />
-      <Card>
-        <label className="flex gap-3">
-          <input
-            type="checkbox"
-            checked={s.enabled.forecast}
-            onChange={(e) =>
-              update((v) => ({
-                ...v,
-                enabled: { ...v.enabled, forecast: e.target.checked },
-              }))
-            }
-          />{" "}
-          Enable integrated forecast and link it to DCF
-        </label>
-        <label className="my-4 block">
-          Profitability Forecast Method
-          <select
-            className="field mt-2"
-            value={profitabilityMethod(s)}
-            onChange={(e) =>
-              update((v) => ({
-                ...v,
-                profitability_method: e.target.value as "ebitda" | "opex",
-              }))
-            }
+      <details className="mb-5">
+        <summary className="cursor-pointer font-semibold">
+          Historical References & Assumption Adoption
+        </summary>
+        <HistoricalReferenceControls scope="forecast" />
+      </details>
+      <details open className="mb-5">
+        <summary className="cursor-pointer font-semibold">
+          Forecast Configuration
+        </summary>
+        <Card>
+          <label className="flex gap-3">
+            <input
+              type="checkbox"
+              checked={s.enabled.forecast}
+              onChange={(e) =>
+                update((v) => ({
+                  ...v,
+                  enabled: { ...v.enabled, forecast: e.target.checked },
+                }))
+              }
+            />{" "}
+            Enable integrated forecast and link it to DCF
+          </label>
+          <label className="my-4 block">
+            Profitability Forecast Method
+            <select
+              className="field mt-2"
+              value={profitabilityMethod(s)}
+              onChange={(e) =>
+                update((v) => ({
+                  ...v,
+                  profitability_method: e.target.value as "ebitda" | "opex",
+                }))
+              }
+            >
+              <option value="ebitda">Use EBITDA Margin</option>
+              <option value="opex">Use Operating Expenses / Revenue</option>
+            </select>
+          </label>
+          <div className="my-5 flex gap-6">
+            <label>
+              Horizon
+              <select
+                className="field ml-3"
+                value={s.forecast.horizon}
+                onChange={(e) =>
+                  update((v) => ({
+                    ...v,
+                    forecast: {
+                      ...v.forecast,
+                      horizon: Number(e.target.value) as 3 | 5 | 10,
+                    },
+                  }))
+                }
+              >
+                {[3, 5, 10].map((y) => (
+                  <option key={y} value={y}>
+                    {y} years
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Financing
+              <select
+                className="field ml-3"
+                value={s.forecast.financing}
+                onChange={(e) =>
+                  update((v) => ({
+                    ...v,
+                    forecast: {
+                      ...v.forecast,
+                      financing: e.target.value as "revolver" | "none",
+                    },
+                  }))
+                }
+              >
+                <option value="revolver">Revolver to minimum cash</option>
+                <option value="none">No balancing financing</option>
+              </select>
+            </label>
+          </div>
+          <Link
+            className="my-3 inline-block text-teal"
+            href="/workspace#assumption-analysis"
           >
-            <option value="ebitda">Use EBITDA Margin</option>
-            <option value="opex">Use Operating Expenses / Revenue</option>
-          </select>
-        </label>
-        <div className="my-5 flex gap-6">
-          <label>
-            Horizon
-            <select
-              className="field ml-3"
-              value={s.forecast.horizon}
-              onChange={(e) =>
-                update((v) => ({
-                  ...v,
-                  forecast: {
-                    ...v.forecast,
-                    horizon: Number(e.target.value) as 3 | 5 | 10,
-                  },
-                }))
-              }
-            >
-              {[3, 5, 10].map((y) => (
-                <option key={y} value={y}>
-                  {y} years
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            Financing
-            <select
-              className="field ml-3"
-              value={s.forecast.financing}
-              onChange={(e) =>
-                update((v) => ({
-                  ...v,
-                  forecast: {
-                    ...v.forecast,
-                    financing: e.target.value as "revolver" | "none",
-                  },
-                }))
-              }
-            >
-              <option value="revolver">Revolver to minimum cash</option>
-              <option value="none">No balancing financing</option>
-            </select>
-          </label>
-        </div>
-        <Link
-          className="my-3 inline-block text-teal"
-          href="/workspace#assumption-analysis"
-        >
-          Review document assumptions
-        </Link>
-        <AssumptionShortcuts kind="forecast" />
-        <NumberInputs
-          group="forecast"
-          values={s.forecast}
-          omit={["horizon"]}
-          change={(k, v) =>
-            update((a) => ({ ...a, forecast: { ...a.forecast, [k]: v } }))
-          }
-        />
-        <p className="mt-4 text-sm text-mist">
-          The selected profitability method controls EBITDA. Operating expenses
-          must exclude depreciation, which is deducted separately. Other assets
-          and non-debt liabilities remain constant. NWC represents net operating
-          assets. Interest uses opening debt; revolver draws occur at year-end.
-          Missing opening balances block the forecast.
-        </p>
-      </Card>
-      <Errors result={result} error={error} />
-      <Card>
-        <h2>Historical Actuals</h2>
-        <DataTable
-          rows={Object.entries(result?.history ?? {}).map(([period, row]) => ({
-            period,
-            ...row,
-          }))}
-        />
-      </Card>
-      <Card className="mt-5">
-        <h2 className="text-teal">
-          Projected income, balance sheet and cash flow statements
-        </h2>
-        <DataTable
-          rows={result?.forecast ?? []}
-          caption="Forecast outputs - calculated from user-entered assumptions"
-        />
-      </Card>
+            Review document assumptions
+          </Link>
+        </Card>
+      </details>
+      <details open className="mb-5">
+        <summary className="cursor-pointer font-semibold">
+          Operating Assumptions
+        </summary>
+        <Card>
+          <AssumptionShortcuts kind="forecast" />
+          <NumberInputs
+            group="forecast"
+            values={s.forecast}
+            omit={["horizon"]}
+            change={(k, v) =>
+              update((a) => ({ ...a, forecast: { ...a.forecast, [k]: v } }))
+            }
+          />
+          <p className="mt-4 text-sm text-mist">
+            The selected profitability method controls EBITDA. Operating
+            expenses must exclude depreciation, which is deducted separately.
+            Other assets and non-debt liabilities remain constant. NWC
+            represents net operating assets. Interest uses opening debt;
+            revolver draws occur at year-end. Missing opening balances block the
+            forecast.
+          </p>
+        </Card>
+      </details>
+      <ForecastComparison />
+      <Errors result={result} loading={loading} retry={retry} error={error} />
+      <details className="mb-5">
+        <summary className="cursor-pointer font-semibold">
+          Historical Actuals
+        </summary>
+        <Card>
+          <h2>Historical Actuals</h2>
+          <DataTable
+            rows={Object.entries(result?.history ?? {}).map(
+              ([period, row]) => ({
+                period,
+                ...row,
+              }),
+            )}
+          />
+        </Card>
+      </details>
+      <details open>
+        <summary className="cursor-pointer font-semibold">
+          Projected Financial Statements
+        </summary>
+        <Card className="mt-5">
+          <h2 className="text-teal">
+            Projected income, balance sheet and cash flow statements
+          </h2>
+          <DataTable
+            rows={result?.forecast ?? []}
+            caption="Forecast outputs - calculated from user-entered assumptions"
+          />
+        </Card>
+      </details>
       {!!result?.forecast.length && (
         <Link
           href="/valuation"
@@ -791,10 +802,22 @@ export function ModelsPage() {
     update,
     result,
     error,
+    loading,
+    retry,
   } = useModel();
   const [tab, setTab] = useState<
     "dcf" | "peers" | "transactions" | "ddm" | "assets"
   >("dcf");
+  useEffect(() => {
+    const sync = () => {
+      const value = location.hash.slice(1);
+      if (["dcf", "peers", "transactions", "ddm", "assets"].includes(value))
+        setTab(value as typeof tab);
+    };
+    sync();
+    window.addEventListener("hashchange", sync);
+    return () => window.removeEventListener("hashchange", sync);
+  }, []);
   const annual = [
     "revenue_growth",
     "ebit_margin",
@@ -955,7 +978,10 @@ export function ModelsPage() {
             key={k}
             role="tab"
             aria-selected={tab === k}
-            onClick={() => setTab(k)}
+            onClick={() => {
+              setTab(k);
+              history.replaceState(null, "", `#${k}`);
+            }}
             className={`border px-4 py-3 ${tab === k ? "border-gold text-gold" : "border-line text-mist"}`}
           >
             {name}
@@ -1226,8 +1252,13 @@ export function ModelsPage() {
           </>
         )}
       </Card>
-      <Errors result={result} error={error} />
+      <Errors result={result} loading={loading} retry={retry} error={error} />
       <Results result={result} price={s.price} />
+      {result && Object.keys(result.models).length > 0 && (
+        <Link href="/report" className="mt-4 block text-teal underline">
+          View Valuation Results
+        </Link>
+      )}
     </>
   );
 }
@@ -1389,8 +1420,10 @@ function Results({
   );
 }
 export function ResultsPage() {
-  const { workspace, settings, result, error } = useModel();
-  const { exportWorkspace, importWorkspace, project } = useWorkspace();
+  const { workspace, settings, result, error, loading, retry } =
+    useModel("extended");
+  const { exportWorkspace, importWorkspace, project, updateWorkspace } =
+    useWorkspace();
   const exportContext = useRef({
     id: project.id,
     revision: workspace.revision,
@@ -1403,6 +1436,10 @@ export function ResultsPage() {
       mounted.current = false;
     };
   }, []);
+  const [pendingImport, setPendingImport] = useState<{
+    name: string;
+    raw: string;
+  } | null>(null);
   const [exportError, setExportError] = useState(""),
     [busy, setBusy] = useState(false);
   async function download() {
@@ -1421,6 +1458,14 @@ export function ResultsPage() {
       )
         return;
       saveBlob(f.blob, f.filename);
+      updateWorkspace((w) => ({
+        ...w,
+        modelExport: {
+          input_hash: workbookFingerprint(w),
+          filename: f.filename,
+          created_at: new Date().toISOString(),
+        },
+      }));
     } catch (e) {
       setExportError(e instanceof Error ? e.message : "Export failed");
     } finally {
@@ -1443,7 +1488,12 @@ export function ResultsPage() {
           </Button>
         }
       />
-      <Errors result={result} error={error || exportError} />
+      <Errors
+        result={result}
+        loading={loading}
+        retry={retry}
+        error={error || exportError}
+      />
       <Results result={result} price={settings.price} />
       <Card className="mt-5">
         <h2>Scenario comparison</h2>
@@ -1518,6 +1568,31 @@ export function ResultsPage() {
           </div>
         </Card>
       ))}
+      {pendingImport && (
+        <ConfirmationDialog
+          title="Import Project Backup"
+          confirmLabel="Create Imported Project"
+          onCancel={() => setPendingImport(null)}
+          onConfirm={() => {
+            try {
+              importWorkspace(pendingImport.raw);
+              setPendingImport(null);
+              setExportError("");
+            } catch (reason) {
+              setExportError(
+                reason instanceof Error ? reason.message : "Import failed.",
+              );
+            }
+          }}
+        >
+          <p>{pendingImport.name}</p>
+          <p>
+            A new independent project will be created. Existing projects will be
+            preserved. Source metadata and assumptions are retained; source text
+            retention remains disabled.
+          </p>
+        </ConfirmationDialog>
+      )}
       <Card className="mt-5">
         <h2 className="mb-4">Portable project backup</h2>
         <Button
@@ -1540,7 +1615,14 @@ export function ResultsPage() {
             onChange={async (e) => {
               try {
                 const f = e.target.files?.[0];
-                if (f) importWorkspace(await f.text());
+                if (f) {
+                  if (f.size > 10 * 1024 * 1024)
+                    throw new Error("Project imports are limited to 10 MB.");
+                  const raw = await f.text();
+                  const preview = previewProjectBackup(raw);
+                  setPendingImport({ raw, name: preview.name });
+                }
+                e.target.value = "";
               } catch (reason) {
                 setExportError(
                   reason instanceof Error ? reason.message : "Invalid backup",

@@ -238,11 +238,11 @@ it("continues uploads after failure and retries failed files only", async () => 
     target: { files: [new File(["a"], "a.csv"), new File(["b"], "b.csv")] },
   });
   await waitFor(() => expect(mocks.upload).toHaveBeenCalledTimes(2));
-  await screen.findByText("Processed");
+  await screen.findByText("Processed Successfully");
   expect(screen.getByText("First file failed")).toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "Retry Failed Uploads" }));
   await waitFor(() => expect(mocks.upload).toHaveBeenCalledTimes(3));
-  await waitFor(() => expect(screen.getAllByText("Processed")).toHaveLength(2));
+  await waitFor(() => expect(screen.getAllByText("Processed Successfully")).toHaveLength(2));
 });
 it("applies annual assumptions, copies previous year and confirms resets", async () => {
   render(

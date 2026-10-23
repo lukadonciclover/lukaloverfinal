@@ -225,6 +225,7 @@ it("previews source dependencies, cancellation preserves data, and removal flags
       </AppShell>
     </WorkspaceProvider>,
   );
+  fireEvent.click(await screen.findByRole("link", { name: "Upload Documents" }));
   const remove = await screen.findByRole("button", {
     name: "Remove Synthetic report and derived data",
   });

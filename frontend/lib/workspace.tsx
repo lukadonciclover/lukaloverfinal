@@ -1,4 +1,5 @@
 "use client";
+import { CalculationCacheProvider } from "./calculation-cache";
 
 import { createContext, type ReactNode, useCallback, useContext, useEffect, useRef, useState } from "react";
 import { createBlankWorkspace } from "@/lib/defaults";
@@ -24,6 +25,8 @@ interface WorkspaceContextValue {
   hydrated: boolean;
   persistenceStatus: PersistenceStatus;
   persistenceMessage: string;
+  projectMessage: string;
+  dismissProjectMessage: () => void;
   updateWorkspace: (updater: Workspace | ((current: Workspace) => Workspace)) => void;
   createProject: (name?: string) => string;
   renameProject: (projectId: string, name: string) => void;
@@ -87,6 +90,7 @@ function validateWorkspace(workspace: Workspace): void {
   if (typeof workspace.company.name !== "string" || !workspace.company.name.trim() || workspace.company.name.length > 300) throw new Error("Company name is missing or too long.");
   if (typeof workspace.company.currency !== "string" || !/^[A-Z]{3}$/.test(workspace.company.currency)) throw new Error("Company currency must be a three-letter code.");
   if (workspace.figures.length > 10_000 || workspace.documents.length > 100 || workspace.chats.length > 2_000 || workspace.experiments.length > 1_000 || workspace.claimAssessments.length > 2_000 || Object.keys(workspace.agentRuns).length > 100) throw new Error("Workspace exceeds supported record limits.");
+  if (workspace.modelExport !== undefined && (!record(workspace.modelExport) || typeof workspace.modelExport.input_hash !== "string" || typeof workspace.modelExport.created_at !== "string" || typeof workspace.modelExport.filename !== "string")) throw new Error("The model export receipt is malformed.");
   for (const figure of workspace.figures) {
     if (figure.company_id !== workspace.company.id || !figure.metric || !figure.period || !finiteOrNull(figure.value) || !Number.isFinite(figure.unit_scale) || figure.unit_scale <= 0) throw new Error("A financial figure is malformed or belongs to another company.");
   }
@@ -203,6 +207,19 @@ function parsePortfolio(value: unknown, allowSensitiveRetention: boolean): Portf
   return { portfolio_version: 1, active_project_id: active, projects };
 }
 
+export function previewProjectBackup(raw: string): { workspace: Workspace; name: string } {
+  if (new Blob([raw]).size > MAX_IMPORT_BYTES) throw new Error("Project imports are limited to 10 MB.");
+  const parsed: unknown = JSON.parse(raw);
+  let value: unknown = parsed;
+  let name = "";
+  if (record(parsed) && parsed.equitylens_project_version === 1 && record(parsed.project)) {
+    value = parsed.project.workspace;
+    if (typeof parsed.project.name === "string") name = parsed.project.name;
+  }
+  const workspace = parseWorkspace(value, false);
+  return { workspace, name: name || workspace.company.name };
+}
+
 export function setRetentionPreference(enabled: boolean): void {
   if (enabled) window.localStorage.removeItem(RETENTION_OPT_OUT_KEY);
   else window.localStorage.setItem(RETENTION_OPT_OUT_KEY, "true");
@@ -228,10 +245,12 @@ function persistencePortfolioCopy(portfolio: Portfolio, allowSensitiveRetention 
 
 export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const [portfolio, setPortfolio] = useState<Portfolio>({ portfolio_version: 1, active_project_id: "", projects: [] });
+  const [projectMessage, setProjectMessage] = useState("");
   const [hydrated, setHydrated] = useState(false);
   const [persistenceBlocked, setPersistenceBlocked] = useState(false);
   const [persistenceStatus, setPersistenceStatus] = useState<PersistenceStatus>("loading");
   const [persistenceMessage, setPersistenceMessage] = useState("Loading browser projects.");
+  const persistedPortfolioRef = useRef<Portfolio | null>(null);
   const latestPortfolioRef = useRef(portfolio);
   latestPortfolioRef.current = portfolio;
   const activeProject = portfolio.projects.find((project) => project.id === portfolio.active_project_id) ?? null;
@@ -254,7 +273,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           setPersistenceBlocked(true); setPersistenceStatus("error"); setPersistenceMessage(reason instanceof Error ? `Saved projects were preserved but not loaded: ${reason.message}` : "Saved projects are invalid.");
         }
       }
-      if (active) { setHydrated(true); setPersistenceStatus((current) => current === "error" ? current : "saved"); setPersistenceMessage((current) => current === "Loading browser projects." ? "Projects loaded. Changes are saved in this browser." : current); }
+      if (active) { setHydrated(true); setPersistenceStatus((current) => current === "error" ? current : "saving"); setPersistenceMessage((current) => current === "Loading browser projects." ? "Projects loaded. Changes are saved in this browser." : current); }
     }
     void hydrate();
     return () => { active = false; };
@@ -262,6 +281,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (!hydrated || persistenceBlocked) return;
+    let cancelled = false;
     setPersistenceStatus("saving"); setPersistenceMessage("Saving projects.");
     const savingPortfolio = portfolio;
     const timer = window.setTimeout(async () => {
@@ -271,15 +291,15 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       try {
         await saveIndexedWorkspace(copy);
         try { window.localStorage.removeItem(LEGACY_STORAGE_KEY); } catch { /* IndexedDB remains authoritative. */ }
-        if (latestPortfolioRef.current === savingPortfolio) { setPersistenceStatus("saved"); setPersistenceMessage("Saved all projects to IndexedDB in this browser."); }
+        if (!cancelled && latestPortfolioRef.current === savingPortfolio) { persistedPortfolioRef.current = savingPortfolio; setPersistenceStatus("saved"); setPersistenceMessage("Saved all projects to IndexedDB in this browser."); }
       } catch (indexedError) {
         let fallback = copy;
         try { if (window.localStorage.getItem(RETENTION_OPT_OUT_KEY) === "true") fallback = persistencePortfolioCopy(savingPortfolio, false); } catch { fallback = persistencePortfolioCopy(savingPortfolio, false); }
-        try { window.localStorage.setItem(LEGACY_STORAGE_KEY, JSON.stringify(fallback)); setPersistenceStatus("local-only"); setPersistenceMessage("IndexedDB is unavailable. Saved with limited localStorage capacity."); }
-        catch (localError) { const error = localError instanceof Error ? localError : indexedError; setPersistenceStatus("error"); setPersistenceMessage(error instanceof Error && error.name === "QuotaExceededError" ? "Browser storage quota was exceeded. Export now; recent changes are not saved." : "Browser persistence failed. Export now; recent changes are not saved."); }
+        try { if (cancelled || latestPortfolioRef.current !== savingPortfolio) return; window.localStorage.setItem(LEGACY_STORAGE_KEY, JSON.stringify(fallback)); persistedPortfolioRef.current = savingPortfolio; setPersistenceStatus("local-only"); setPersistenceMessage("IndexedDB is unavailable. Saved with limited localStorage capacity."); }
+        catch (localError) { if (cancelled || latestPortfolioRef.current !== savingPortfolio) return; const error = localError instanceof Error ? localError : indexedError; setPersistenceStatus("error"); setPersistenceMessage(error instanceof Error && error.name === "QuotaExceededError" ? "Browser storage quota was exceeded. Export now; recent changes are not saved." : "Browser persistence failed. Export now; recent changes are not saved."); }
       }
     }, 350);
-    return () => window.clearTimeout(timer);
+    return () => { cancelled = true; window.clearTimeout(timer); };
   }, [portfolio, hydrated, persistenceBlocked]);
 
   const updateWorkspace = useCallback((updater: Workspace | ((current: Workspace) => Workspace)) => {
@@ -340,18 +360,14 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const exportWorkspace = useCallback(() => JSON.stringify({ equitylens_project_version: 1, project: { ...activeProject, workspace: persistenceCopy(requireActiveProject(activeProject).workspace) } }, null, 2), [activeProject]);
   const importWorkspace = useCallback((raw: string) => {
     if (latestPortfolioRef.current.projects.length >= MAX_PROJECTS) throw new Error(`Projects are limited to ${MAX_PROJECTS}.`);
-    if (new Blob([raw]).size > MAX_IMPORT_BYTES) throw new Error("Project imports are limited to 10 MB.");
-    const parsed: unknown = JSON.parse(raw);
-    let workspaceValue: unknown = parsed;
-    let projectName = "Imported project";
-    if (record(parsed) && parsed.equitylens_project_version === 1 && record(parsed.project)) { workspaceValue = parsed.project.workspace; if (typeof parsed.project.name === "string") projectName = parsed.project.name; }
-    const imported = parseWorkspace(workspaceValue, false);
+    const { workspace: imported, name: projectName } = previewProjectBackup(raw);
     const project = newProject(imported, projectName === "Imported project" ? imported.company.name : projectName);
     setPersistenceBlocked(false);
+    setProjectMessage(`Imported ${project.name} as a new independent project. Existing projects were preserved.`);
     setPortfolio((current) => ({ ...current, active_project_id: project.id, projects: [...current.projects, project] }));
   }, []);
 
-  return <WorkspaceContext.Provider value={{ workspace: activeProject?.workspace ?? null, project: activeProject, projects: portfolio.projects, activeProjectId: activeProject?.id ?? "", hydrated, persistenceStatus, persistenceMessage, updateWorkspace, createProject, renameProject, duplicateProject, switchProject, archiveProject, restoreProject, setDocumentRetention, resetWorkspace, exportWorkspace, importWorkspace }}>{hydrated ? children : <div className="flex min-h-[60vh] items-center justify-center text-sm text-mist">Loading browser projects...</div>}</WorkspaceContext.Provider>;
+  return <WorkspaceContext.Provider value={{ workspace: activeProject?.workspace ?? null, project: activeProject, projects: portfolio.projects, activeProjectId: activeProject?.id ?? "", hydrated, persistenceStatus: (persistenceStatus === "saved" || persistenceStatus === "local-only") && persistedPortfolioRef.current !== portfolio ? "saving" : persistenceStatus, persistenceMessage, projectMessage, dismissProjectMessage: () => setProjectMessage(""), updateWorkspace, createProject, renameProject, duplicateProject, switchProject, archiveProject, restoreProject, setDocumentRetention, resetWorkspace, exportWorkspace, importWorkspace }}>{hydrated ? <CalculationCacheProvider>{children}</CalculationCacheProvider> : <div className="flex min-h-[60vh] items-center justify-center text-sm text-mist">Loading browser projects...</div>}</WorkspaceContext.Provider>;
 }
 
 export function useProjectPortfolio(): WorkspaceContextValue {

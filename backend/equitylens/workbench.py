@@ -12,7 +12,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 from equitylens.models import DCFInputs, FinancialFigure
 from equitylens.financials import data_quality_issues
 from equitylens.periods import annual_history, target_financials
-from equitylens.valuation import calculate_dcf, calculate_multiples
+from equitylens.valuation import calculate_dcf, calculate_multiples, validate_dcf
 
 
 class Inputs(BaseModel):
@@ -410,6 +410,31 @@ def dcf_json(d: DCFInputs) -> dict:
     )
 
 
+def sensitivity_equity(d: DCFInputs, schedule: list[dict]) -> float:
+    """Reuse operating cash flows only when growth/margins and operating inputs are unchanged."""
+    import pandas as pd
+    errors = validate_dcf(d)
+    if errors:
+        raise ValueError(" ".join(errors))
+    last = schedule[-1]
+    terminal = (last["fcff"] * (1 + d.terminal_growth) / (d.wacc - d.terminal_growth)
+                if d.terminal_method == "growth" else
+                (last["ebit"] + last["depreciation"]) * d.exit_multiple)
+    if d.terminal_method == "exit_multiple" and terminal <= 0:
+        raise ValueError("Exit multiple requires positive terminal EBITDA.")
+    pv = pd.Series([row["fcff"] / (1 + d.wacc) ** (index + 1) for index, row in enumerate(schedule)]).sum()
+    enterprise = float(pv + terminal / (1 + d.wacc) ** len(schedule))
+    equity = enterprise - d.debt + d.cash - d.minority_interest + d.non_operating_assets
+    outputs = [terminal, enterprise, equity]
+    if d.diluted_shares is not None:
+        implied = equity / d.diluted_shares
+        outputs.append(implied)
+        if d.reference_price not in {None, 0}: outputs.append(implied / d.reference_price - 1)
+    if not all(math.isfinite(v) for v in outputs):
+        raise ValueError("DCF assumptions produced non-finite results.")
+    return equity
+
+
 def effective_dcf(p: Workbench, history: dict, forecasts: list) -> DCFInputs:
     d = p.dcf.model_copy(deep=True)
     if p.wacc:
@@ -440,7 +465,7 @@ def effective_dcf(p: Workbench, history: dict, forecasts: list) -> DCFInputs:
     return DCFInputs.model_validate(d.model_dump())
 
 
-def evaluate(p: Workbench) -> dict:
+def evaluate(p: Workbench, mode: Literal["core", "extended"] = "extended") -> dict:
     if p.blocked_assumptions: raise ValueError("Source document removed; review or clear affected assumptions before calculation: " + ", ".join(p.blocked_assumptions))
     history = normalized_history(p)
     output = {
@@ -471,56 +496,59 @@ def evaluate(p: Workbench) -> dict:
             value = attempt("dcf", lambda: dcf_json(d))
             if value:
                 output["models"]["DCF"] = value
-                for name, s in p.scenarios.items():
-                    scenario = d.model_copy(
-                        update=dict(
-                            revenue_growth=[v + s.growth_delta for v in d.revenue_growth],
-                            ebit_margin=[v + s.margin_delta for v in d.ebit_margin],
-                            wacc=d.wacc + s.wacc_delta,
-                            terminal_growth=d.terminal_growth + s.terminal_delta,
-                            exit_multiple=d.exit_multiple + s.exit_delta,
-                        )
-                    )
-                    output["scenarios"][name] = attempt(
-                        name, lambda: dcf_json(DCFInputs.model_validate(scenario.model_dump()))
-                    )
-                for kind in ("growth", "exit_multiple", "operating"):
-                    xs = (
-                        [d.wacc + v for v in (-0.02, -0.01, 0, 0.01, 0.02)]
-                        if kind != "operating"
-                        else [v for v in (-0.02, -0.01, 0, 0.01, 0.02)]
-                    )
-                    ys = (
-                        [d.terminal_growth + v for v in (-0.01, -0.005, 0, 0.005, 0.01)]
-                        if kind == "growth"
-                        else [d.exit_multiple + v for v in (-2, -1, 0, 1, 2)]
-                        if kind == "exit_multiple"
-                        else [-0.02, -0.01, 0, 0.01, 0.02]
-                    )
-                    values = []
-                    for y in ys:
-                        row = []
-                        for x in xs:
-                            update = (
-                                {
-                                    "wacc": x,
-                                    "terminal_method": kind,
-                                    "terminal_growth" if kind == "growth" else "exit_multiple": y,
-                                }
-                                if kind != "operating"
-                                else {
-                                    "revenue_growth": [v + x for v in d.revenue_growth],
-                                    "ebit_margin": [v + y for v in d.ebit_margin],
-                                }
+                if mode == "extended":
+                    for name, s in p.scenarios.items():
+                        scenario = d.model_copy(
+                            update=dict(
+                                revenue_growth=[v + s.growth_delta for v in d.revenue_growth],
+                                ebit_margin=[v + s.margin_delta for v in d.ebit_margin],
+                                wacc=d.wacc + s.wacc_delta,
+                                terminal_growth=d.terminal_growth + s.terminal_delta,
+                                exit_multiple=d.exit_multiple + s.exit_delta,
                             )
-                            try:
-                                row.append(
-                                    dcf_json(DCFInputs.model_validate({**d.model_dump(), **update}))["equity_value"]
+                        )
+                        output["scenarios"][name] = attempt(
+                            name, lambda: dcf_json(DCFInputs.model_validate(scenario.model_dump()))
+                        )
+                    for kind in ("growth", "exit_multiple", "operating"):
+                        xs = (
+                            [d.wacc + v for v in (-0.02, -0.01, 0, 0.01, 0.02)]
+                            if kind != "operating"
+                            else [v for v in (-0.02, -0.01, 0, 0.01, 0.02)]
+                        )
+                        ys = (
+                            [d.terminal_growth + v for v in (-0.01, -0.005, 0, 0.005, 0.01)]
+                            if kind == "growth"
+                            else [d.exit_multiple + v for v in (-2, -1, 0, 1, 2)]
+                            if kind == "exit_multiple"
+                            else [-0.02, -0.01, 0, 0.01, 0.02]
+                        )
+                        values = []
+                        for y in ys:
+                            row = []
+                            for x in xs:
+                                update = (
+                                    {
+                                        "wacc": x,
+                                        "terminal_method": kind,
+                                        "terminal_growth" if kind == "growth" else "exit_multiple": y,
+                                    }
+                                    if kind != "operating"
+                                    else {
+                                        "revenue_growth": [v + x for v in d.revenue_growth],
+                                        "ebit_margin": [v + y for v in d.ebit_margin],
+                                    }
                                 )
-                            except (ValueError, OverflowError):
-                                row.append(None)
-                        values.append(row)
-                    output["sensitivities"][kind] = dict(columns=xs, rows=ys, values=values)
+                                try:
+                                    row.append(
+                                        sensitivity_equity(DCFInputs.model_validate({**d.model_dump(), **update}), value["forecast"])
+                                        if kind != "operating" else
+                                        dcf_json(DCFInputs.model_validate({**d.model_dump(), **update}))["equity_value"]
+                                    )
+                                except (ValueError, OverflowError):
+                                    row.append(None)
+                            values.append(row)
+                        output["sensitivities"][kind] = dict(columns=xs, rows=ys, values=values)
     target = None
     for name, enabled, fn in [
         ("Trading comparables", bool(p.peers), lambda: relative_valuation(p.peers, target_financials(p, history), p)),

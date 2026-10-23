@@ -70,19 +70,33 @@ export async function apiPost<T>(
   return response.json() as Promise<T>;
 }
 
-export async function apiUpload<T>(
-  path: string,
-  form: FormData,
-  options: { signal?: AbortSignal } = {},
-): Promise<T> {
-  const response = await fetch(`/api/backend${path}`, {
-    method: "POST",
-    body: form,
-    signal: options.signal,
+export async function apiUpload<T>(path: string, form: FormData, options: { signal?: AbortSignal; onUploaded?: () => void } = {}): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    const cleanup = () => options.signal?.removeEventListener("abort", abort);
+    const fail = (error: Error) => { cleanup(); reject(error); };
+    const abort = () => { xhr.abort(); fail(new DOMException("Upload cancelled.", "AbortError")); };
+    if (options.signal?.aborted) { abort(); return; }
+    options.signal?.addEventListener("abort", abort, { once: true });
+    xhr.open("POST", `/api/backend${path}`);
+    xhr.timeout = 120_000;
+    xhr.upload.onload = () => options.onUploaded?.();
+    xhr.onerror = () => fail(new Error("Network interruption. Check your connection and retry this file."));
+    xhr.ontimeout = () => fail(new Error("Document processing timed out. Upload fewer PDF pages or a structured table and retry."));
+    xhr.onload = () => {
+      cleanup();
+      let body: unknown;
+      try { body = JSON.parse(xhr.responseText); } catch { reject(new Error("The document service returned an unreadable response. Retry with a smaller document.")); return; }
+      if (xhr.status >= 200 && xhr.status < 300) resolve(body as T);
+      else {
+        const detail = body && typeof body === "object" && "detail" in body ? (body as { detail: unknown }).detail : null;
+        if (typeof detail === "string") reject(new ApiError(formatFinancialMessage(detail), xhr.status));
+        else if (xhr.status === 413) reject(new ApiError("This file exceeds the current 4 MB upload limit. Save relevant pages as a smaller PDF and retry.", xhr.status));
+        else void parseError(new Response(xhr.responseText, { status: xhr.status })).then((message) => reject(new ApiError(message, xhr.status)));
+      }
+    };
+    xhr.send(form);
   });
-  if (!response.ok)
-    throw new ApiError(await parseError(response), response.status);
-  return response.json() as Promise<T>;
 }
 
 export async function apiDownload(

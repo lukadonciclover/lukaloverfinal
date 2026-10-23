@@ -4,6 +4,7 @@ import hashlib
 import json
 import math
 import os
+import re
 from io import BytesIO
 from pathlib import Path
 from typing import Any, Literal
@@ -137,6 +138,9 @@ def comparable_valuation(payload: ComparablesRequest) -> dict[str, Any]:
 
 @app.post("/v1/documents/process")
 async def process_document(file: UploadFile = File(...), currency: str = Form(default="USD")) -> dict[str, Any]:  # noqa: B008
+    currency = currency.strip().upper()
+    if not re.fullmatch(r"[A-Z]{3}", currency):
+        raise HTTPException(status_code=422, detail="Reporting currency must be a three-letter uppercase code. Review Company Information.")
     name = Path(file.filename or "upload").name
     suffix = Path(name).suffix.lower()
     if suffix not in ALLOWED_SUFFIXES:
@@ -150,6 +154,8 @@ async def process_document(file: UploadFile = File(...), currency: str = Form(de
     if suffix == ".pdf":
         try:
             with pymupdf.open(stream=content, filetype="pdf") as pdf:
+                if pdf.needs_pass:
+                    raise HTTPException(status_code=400, detail="This PDF is password protected. Export an unlocked copy and retry.")
                 if pdf.page_count > MAX_PDF_PAGES:
                     raise HTTPException(
                         status_code=413,
@@ -158,12 +164,14 @@ async def process_document(file: UploadFile = File(...), currency: str = Form(de
         except HTTPException:
             raise
         except Exception as exc:
-            raise HTTPException(status_code=400, detail=f"The PDF could not be opened: {exc}") from exc
+            raise HTTPException(status_code=400, detail="The PDF could not be read. Check that the document is not encrypted or damaged.") from exc
     try:
         extracted = extract_document(content, name)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     combined = "\n".join(page["text"] for page in extracted.pages)
+    if not combined.strip():
+        extracted.warning = "No readable financial text was found. Upload a text-based PDF or structured CSV/XLSX table. OCR is not included."
     chunks = chunk_pages(extracted.pages)[:MAX_RETURNED_CHUNKS]
     identifier = document_identifier(content)
     document_type = classify_document(name, combined)
@@ -238,9 +246,9 @@ def download(content: bytes, filename: str, media_type: str) -> StreamingRespons
 
 
 @app.post("/v1/workbench/calculate")
-def calculate_workbench(payload: Workbench):
+def calculate_workbench(payload: Workbench, mode: Literal["core", "extended"] = "extended"):
     try:
-        return evaluate(payload)
+        return evaluate(payload, mode=mode)
     except (ValueError, OverflowError) as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
